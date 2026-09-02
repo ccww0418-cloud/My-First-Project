@@ -1,0 +1,54 @@
+<!doctype html>
+<!--
+  기본 언어는 영어입니다. 사용자가 언어 토글로 바꾸면 아래 부트스트랩
+  스크립트와 src/i18n.js 가 이 lang 속성을 갱신합니다.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- styles.css 의 --paper 와 같은 값으로 유지하세요. 다르면 모바일에서
+         주소창 색과 페이지 배경 사이에 이음선이 보입니다. -->
+    <meta name="theme-color" content="#f5f1e8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#17161a" media="(prefers-color-scheme: dark)" />
+    <!--
+      React 마운트 전에 테마와 언어를 미리 적용합니다.
+      이 스크립트가 없으면 첫 프레임이 기본값으로 그려진 뒤 전환되어 깜빡입니다(FOUC).
+    -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('bookbot.theme');
+          document.documentElement.dataset.theme = t === 'dark' ? 'dark' : 'light';
+        } catch (e) {
+          document.documentElement.dataset.theme = 'light';
+        }
+        try {
+          var l = localStorage.getItem('bookbot.lang');
+          // 저장된 값이 없으면 영어. navigator.language 를 따르지 않습니다(의도적).
+          document.documentElement.lang = l === 'ko' ? 'ko' : 'en';
+        } catch (e) {
+          document.documentElement.lang = 'en';
+        }
+      })();
+    </script>
+    <title>Un Livre Pour Vous — CHOWOO</title>
+    <meta
+      name="description"
+      content="Liber tibi electus. A reading room in conversation: describe a mood or a circumstance, and four catalogues — Google Books, Open Library, Project Gutenberg, Hardcover — are consulted so that only books which truly exist are offered."
+    />
+    <!-- 파비콘도 이모지를 버리고 활자로 만듭니다. 상아색 바탕에 보르도 이탤릭 L. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' fill='%23f5f1e8'/><text x='32' y='47' font-size='46' font-family='Didot,Georgia,serif' font-style='italic' fill='%237c2f3a' text-anchor='middle'>L</text></svg>"
+    />
+  </head>
+  <body>
+    <!-- 스크린 리더 사용자를 위한 본문 바로가기 -->
+    <a class="skip-link" href="#composer">Skip to the message box</a>
+    <div id="root"></div>
+    <noscript>This reading room requires JavaScript.</noscript>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

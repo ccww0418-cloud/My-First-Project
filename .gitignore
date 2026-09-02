@@ -1,0 +1,57 @@
+# 의존성
+node_modules/
+
+# 빌드 산출물
+backend/dist/
+backend/.build/
+frontend/dist/
+
+# ⚠️ 환경 변수 — API 키가 들어갈 수 있으므로 절대 커밋하지 마세요
+.env
+.env.local
+.env.production
+.env.*.local
+!.env.example
+
+# ⚠️ 배포 스크립트용 비밀 값 (API 키 + 모델 ID + 알림 이메일)
+infra/secrets.env
+!infra/secrets.env.example
+
+# 배포 상태 (계정/리소스 ID가 들어있음)
+infra/.state
+infra/.state.deleted-*
+infra/.cf-*.json
+infra/.health.json
+infra/.s3del.json
+infra/.*-err
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# 로그
+*.log
+npm-debug.log*
+
+# CloudShell 업로드용 번들 — 소스에서 언제든 다시 만들 수 있는 산출물입니다.
+# git 으로 배포하면 아예 필요가 없어집니다.
+bookbot-cloudshell.zip
+
+# AWS 자격증명 (혹시라도 프로젝트 폴더에 두는 경우 방지)
+.aws/
+*.pem
+credentials
+
+# 렌더 검수 임시 산출물 (npm run check:render)
+frontend/.render/
+
+# ⚠️ 작업용 캡처·보고 PDF
+# 소스가 아니라 진행 중 만든 산출물입니다. 두 가지 이유로 제외합니다.
+#   1) 화면 캡처에 브라우저 주소창이 찍혀 있으면 라이브 URL 이 공개됩니다.
+#      이 서비스는 로그인이 없고 Bedrock 을 호출하므로 URL 공개는 비용 위험입니다.
+#   2) 합계 6MB 가 넘어 저장소만 무거워집니다.
+# 공유가 필요하면 개별적으로 전달하세요.
+*.pdf

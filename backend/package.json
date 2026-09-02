@@ -1,0 +1,26 @@
+{
+  "name": "bookbot-backend",
+  "version": "1.0.0",
+  "description": "BookBot - AWS Lambda backend (Bedrock Converse + tool use, 4 book APIs)",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "check": "node scripts/check.mjs",
+    "smoke": "node scripts/local-test.mjs",
+    "test:agent": "node scripts/agent-loop-test.mjs && BUDGET_TEST=1 node scripts/agent-loop-test.mjs && LLM_DEADLINE_TEST=1 node scripts/agent-loop-test.mjs",
+    "test:policy": "node scripts/policy-test.mjs",
+    "test:features": "node scripts/feature-test.mjs",
+    "models": "bash scripts/list-models.sh",
+    "check:nlk": "node scripts/nlk-check.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "3.716.0",
+    "@aws-sdk/client-dynamodb": "3.716.0",
+    "@aws-sdk/client-ssm": "3.716.0",
+    "@aws-sdk/lib-dynamodb": "3.716.0"
+  }
+}

@@ -1,0 +1,1267 @@
+/* ============================================================
+   Un Livre Pour Vous — 유럽 편집 디자인
+   ============================================================
+
+   디자인 방향
+     프랑스·이탈리아의 문학 잡지나 도서관 목록집(catalogue raisonné)의
+     인쇄물 감각을 화면으로 옮깁니다.
+
+   지켜야 할 원칙 (이걸 어기면 다시 '흔한 웹앱'으로 돌아갑니다)
+     1) 활자가 주인공입니다. 장식이 아니라 활자 크기·기울기·자간으로 위계를 만듭니다.
+     2) 그림자를 쓰지 않습니다. 종이 위의 구분은 머리카락처럼 얇은 선(hairline)입니다.
+     3) 알약(pill) 모양과 둥근 모서리를 쓰지 않습니다. 인쇄물의 모서리는 직각입니다.
+     4) 색을 뿌리지 않습니다. 잉크색 + 보르도 한 가지 + 아주 절제된 황동색뿐입니다.
+     5) 이모지를 쓰지 않습니다. 필요한 표식은 활자와 선으로 만듭니다.
+     6) 여백을 아낌없이 씁니다. 빽빽한 화면은 값싸 보입니다.
+
+   서체
+     제목은 디도(Didot) 계열의 이탤릭 — 고전적인 프랑스 활자의 기울기.
+     본문은 팔라티노/아이오완 계열 — 오래 읽어도 편한 세리프.
+     라벨은 오히마/길산 계열 대문자 + 넓은 자간 — 도록의 캡션 느낌.
+     웹폰트를 불러오지 않습니다. 외부 의존성이 없고, 유럽 접속자
+     개인정보 문제(구글 폰트 CDN)도 피합니다.
+   ============================================================ */
+
+/* ── 팔레트 · 낮 (papier ivoire, 상아색 종이) ─────────────── */
+:root {
+  --paper:      #f5f1e8;   /* 종이 */
+  --paper-2:    #fbf8f2;   /* 살짝 들린 면 */
+  --paper-3:    #efe9dc;   /* 눌린 면 */
+
+  --ink:        #22201d;   /* 본문 잉크 (따뜻한 검정) */
+  --ink-2:      #55504a;   /* 보조 */
+  --ink-3:      #6b6359;   /* 캡션 — AA 대비 5.2:1 확보한 값입니다. 더 밝히지 마세요 */
+
+  --rule:       #cfc7b6;   /* 머리카락 선 */
+  --rule-2:     #e4ddcf;   /* 더 연한 선 */
+
+  --accent:     #7c2f3a;   /* 보르도 — 대비 8.0:1 */
+  --accent-2:   #9a3a47;   /* 호버 */
+  --accent-soft:#f2e7e5;   /* 아주 연한 배경 */
+  /* 황동 — 별점 등 최소한만. 10.5px 작은 글씨에 쓰이므로 AA 4.5:1 이 필요합니다.
+     처음 잡은 #8a7038 은 4.18:1 로 미달이어서 한 단계 어둡게 내렸습니다. 더 밝히지 마세요. */
+  --brass:      #7d6531;   /* 종이 대비 4.93:1 */
+
+  --focus:      #2f5d7c;   /* 키보드 초점 — 보르도와 구분되도록 청색 */
+
+  --font-display: Didot, 'Hoefler Text', Baskerville, 'Palatino Linotype',
+                  Palatino, 'Book Antiqua', Georgia, serif;
+  --font-body:    'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua',
+                  Palatino, Georgia, 'Apple SD Gothic Neo', 'Malgun Gothic', serif;
+  --font-label:   Optima, 'Gill Sans MT', 'Gill Sans', 'Avenir Next',
+                  'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+
+  --measure: 34rem;        /* 읽기 좋은 한 줄 길이 */
+  color-scheme: light;
+}
+
+/* ── 팔레트 · 밤 (nuit, 등불 아래 종이) ───────────────────── */
+[data-theme='dark'] {
+  --paper:      #17161a;
+  --paper-2:    #1f1e23;
+  --paper-3:    #131216;
+
+  --ink:        #ece7dd;
+  --ink-2:      #b3aca1;
+  --ink-3:      #9a9289;   /* 대비 5.9:1 */
+
+  --rule:       #38353d;
+  --rule-2:     #2a282f;
+
+  --accent:     #c9737f;   /* 어두운 배경에서 대비 5.4:1 */
+  --accent-2:   #dd8b96;
+  --accent-soft:#2b2126;
+  --brass:      #c2a15f;
+
+  --focus:      #7fb2d4;
+  color-scheme: dark;
+}
+
+/* ── 기본 ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16.5px;
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* 세리프 본문에서 숫자가 들쭉날쭉하지 않게 */
+  font-variant-numeric: oldstyle-nums proportional-nums;
+}
+
+/* 페이지 바깥쪽에 아주 옅은 결. 종이의 두께감만 암시합니다. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.035) 0%, rgba(0,0,0,0) 22%),
+    linear-gradient(0deg,   rgba(0,0,0,.03)  0%, rgba(0,0,0,0) 18%);
+  z-index: 0;
+}
+[data-theme='dark'] body::before {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.035) 0%, rgba(255,255,255,0) 22%),
+    linear-gradient(0deg,   rgba(0,0,0,.25)        0%, rgba(0,0,0,0)        18%);
+}
+
+.app {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+/* 좌우에 책의 판면 경계선. 넓은 화면에서만 보입니다. */
+@media (min-width: 1260px) {
+  .app {
+    border-left: 1px solid var(--rule-2);
+    border-right: 1px solid var(--rule-2);
+  }
+}
+
+/* 접근성 — 본문 바로가기 */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 10px 18px;
+  font-family: var(--font-label);
+  font-size: 12px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.skip-link:focus { left: 12px; top: 12px; }
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 키보드 초점은 반드시 보이게 (WCAG 2.4.7) */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ── 재사용 활자 ──────────────────────────────────────────── */
+/* 도록 캡션 — 대문자 + 넓은 자간. 이 프로젝트 라벨의 기본형입니다. */
+.chips__label,
+.card__moods-label,
+.composer__hint,
+.header__sub,
+.stats,
+.tools__result {
+  font-family: var(--font-label);
+  text-transform: uppercase;
+  letter-spacing: .16em;
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+/* 숫자와 단위가 섞인 줄은 대문자로 만들지 않습니다.
+   uppercase 를 적용하면 "1.4s" 가 "1.4S" 가 되어 오타처럼 보입니다. */
+.stats,
+.tools__result {
+  text-transform: none;
+  letter-spacing: .1em;
+}
+
+/* ── 머리 ─────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+  flex-shrink: 0;
+  padding: 34px 0 18px;
+  /* 이중 괘선 — 표제지의 관습입니다 */
+  border-bottom: 3px double var(--rule);
+}
+
+.header__brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* 인쇄공의 표식. 폰트에 없는 글자를 쓰지 않으려고 CSS로 그립니다. */
+.header__logo {
+  position: relative;
+  width: 13px;
+  height: 42px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--accent);
+  /* 안에 든 글자(이모지)는 숨기고 선과 마름모만 남깁니다 */
+  font-size: 0;
+  color: transparent;
+}
+.header__logo::after {
+  content: '';
+  position: absolute;
+  left: -3.5px;
+  top: 16px;
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  transform: rotate(45deg);
+}
+
+.header__title {
+  margin: 0 0 5px;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(27px, 3.6vw, 39px);
+  line-height: 1.05;
+  letter-spacing: .012em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* 제작자 서명 — 상표와 완전히 같은 조판.
+   크기·굵기·색·기울기·자간을 하나도 바꾸지 않고 전부 물려받습니다.
+   (처음에는 작게·보르도색으로 넣었는데 "같게 해달라"는 요청과 달랐습니다) */
+.header__author {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  /* 이름이 두 줄로 쪼개지지 않게만 막습니다 */
+  white-space: nowrap;
+  margin-left: .3em;
+}
+
+.header__sub {
+  margin: 0;
+  /* 대문자 + 자간 0.16em 은 폭을 많이 먹습니다. 한 줄에 들어가도록 넉넉히 둡니다. */
+  max-width: 62ch;
+  line-height: 1.55;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .header__sub { white-space: normal; }
+}
+
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-shrink: 0;
+  padding-bottom: 4px;
+  /* 읽을 목록 버튼이 생기면서 조작부가 4개가 되었습니다.
+     좁은 화면에서 한 줄에 못 들어가면 가로 스크롤이 생기므로 접히게 둡니다.
+     (flex-shrink: 0 이라 줄어들지도 않아 그냥 넘쳤습니다) */
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+/* 조작부는 한 줄에 세로 구분선으로 이어 붙입니다. 버튼 하나하나를
+   테두리로 감싸면 화면이 시끄러워집니다. */
+.header__reset,
+.header__theme,
+.header__lang-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  border-radius: 0;
+  margin: 0;
+  padding: 5px 15px;
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: color .18s ease;
+}
+.header__lang { display: inline-flex; }
+.header__lang-select { padding-right: 13px; }
+.header__actions > *:first-child .header__lang-select,
+.header__actions > *:first-child { border-left: 0; }
+
+.header__reset:hover,
+.header__theme:hover,
+.header__lang-select:hover { color: var(--accent); }
+
+.header__theme {
+  font-size: 14px;
+  letter-spacing: 0;
+  line-height: 1;
+  padding: 5px 14px;
+}
+
+/* 읽을 목록 버튼 — 담은 책이 있을 때만 나타납니다 */
+.header__saved {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  border-radius: 0;
+  margin: 0;
+  padding: 5px 15px;
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  cursor: pointer;
+  transition: color .18s ease;
+}
+.header__saved:hover { color: var(--accent-2); }
+/* 목록을 보고 있는 중임을 밑줄로 표시합니다 (색만으로 구분하지 않습니다) */
+.header__saved--on {
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* ── 읽을 목록 화면 ───────────────────────────────────────── */
+.saved {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 30px 0 44px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+.saved::-webkit-scrollbar { width: 9px; }
+.saved::-webkit-scrollbar-thumb { background: var(--rule); }
+
+.saved__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 22px;
+  padding-bottom: 14px;
+  border-bottom: 3px double var(--rule);
+  /* 담은 책이 많으면 머리말이 위로 밀려 '닫기'와 '목록 비우기'가
+     화면에서 사라졌습니다. 스크롤 컨테이너가 .saved 이므로 여기서 고정합니다. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--paper);
+  padding-top: 4px;
+}
+.saved__title {
+  margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1.1;
+}
+.saved__count {
+  margin: 0;
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.saved__actions { display: flex; align-items: center; flex-shrink: 0; }
+.saved__btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 5px 15px;
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: color .18s ease;
+}
+.saved__btn:first-child { border-left: 0; }
+.saved__btn:hover { color: var(--accent); }
+.saved__btn--close { color: var(--accent); }
+
+.saved__warn {
+  margin: 16px 0 0;
+  padding: 12px 18px;
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-2);
+}
+
+.saved__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 76px 0;
+  text-align: center;
+}
+.saved__empty-text {
+  margin: 0;
+  max-width: 34rem;
+  font-size: 16px;
+  line-height: 1.85;
+  color: var(--ink-2);
+}
+
+/* ── 카드의 저장 버튼 ─────────────────────────────────────── */
+.card__actions {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--rule-2);
+}
+.card__save {
+  appearance: none;
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 5px 13px;
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: color .18s ease, border-color .18s ease, background .18s ease;
+}
+.card__save:hover { color: var(--accent); border-color: var(--accent); }
+/* 담긴 상태 — 색뿐 아니라 배경과 문구로도 구분됩니다 */
+.card__save--on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+/* 손가락 조작 기기에서는 여백을 키웁니다. 마우스에서는 지금 크기가 맞고,
+   전부 키우면 편집 디자인의 밀도가 흐트러집니다. */
+@media (pointer: coarse) {
+  .card__save { padding: 9px 15px; }
+  .fb__btn { min-height: 30px; }
+  .saved__btn { padding: 10px 15px; }
+  .header__saved,
+  .header__reset,
+  .header__theme,
+  .header__lang-select { padding-top: 9px; padding-bottom: 9px; }
+}
+.card__save--remove { color: var(--ink-3); }
+.card__save-warn {
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  letter-spacing: .1em;
+  color: var(--accent);
+}
+
+/* ── 답변 평가 ────────────────────────────────────────────── */
+.fb {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule-2);
+}
+.fb__ask {
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.fb__btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 1px 0 2px;
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 14.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: color .18s ease, border-color .18s ease;
+  /* 밑줄 텍스트 버튼이라 높이가 21px 밖에 안 나왔습니다.
+     최소 조작 크기(24px)에 미달해 손가락으로 누르기 어렵습니다.
+     밑줄 위치를 유지하려고 높이만 확보합니다. */
+  min-height: 24px;
+}
+.fb__btn:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.fb__done {
+  font-size: 13.5px;
+  font-style: italic;
+  color: var(--ink-3);
+}
+/* 전송 실패 — 버튼을 남겨두고 사실만 옆에 붙입니다.
+   줄 전체를 차지해서 버튼과 겹치지 않게 flex-basis 를 100% 로 둡니다. */
+.fb__failed {
+  flex: 1 0 100%;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--accent);
+}
+
+/* ── 본문 영역 ────────────────────────────────────────────── */
+.main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 첫 화면 ──────────────────────────────────────────────── */
+.empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 0 56px;
+}
+
+/* 장식 — 가느다란 선 두 개 사이의 마름모 */
+.empty__icon {
+  position: relative;
+  width: 148px;
+  height: 9px;
+  margin-bottom: 30px;
+  font-size: 0;
+  color: transparent;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.empty__icon::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  background: var(--accent);
+  transform: rotate(45deg);
+}
+
+.empty__title {
+  margin: 0 0 16px;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.2;
+  letter-spacing: .01em;
+}
+
+/* 두 문장이 각각 한 줄에 들어가야 가운데 정렬이 깔끔합니다.
+   폭이 좁으면 문장이 중간에서 끊기고 <br/> 과 겹쳐 들쭉날쭉해집니다. */
+.empty__desc {
+  margin: 0 0 46px;
+  max-width: 47rem;
+  color: var(--ink-2);
+  font-size: 16px;
+  line-height: 1.8;
+  text-wrap: balance;
+}
+
+/* ── 예시 질문 ────────────────────────────────────────────── */
+.chips { width: 100%; max-width: 52rem; }
+.chips__label { margin: 0 0 16px; }
+
+.chips__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-top: 1px solid var(--rule-2);
+}
+.chips__list li { border-bottom: 1px solid var(--rule-2); }
+
+/* 목록집의 항목처럼. 알약 버튼이 아니라 한 줄짜리 표제입니다. */
+.chip {
+  width: 100%;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 13px 16px 13px 26px;
+  text-align: left;
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink);
+  cursor: pointer;
+  position: relative;
+  transition: background .18s ease, color .18s ease;
+}
+.chip::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-style: normal;
+}
+.chip:hover:not(:disabled) { background: var(--accent-soft); color: var(--accent); }
+.chip:disabled { opacity: .45; cursor: default; }
+
+/* ── 대화 영역 ────────────────────────────────────────────── */
+.chat {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+.chat::-webkit-scrollbar { width: 9px; }
+.chat::-webkit-scrollbar-track { background: transparent; }
+.chat::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 0; }
+
+.chat__inner { padding: 34px 0 44px; }
+
+.turn + .turn { margin-top: 34px; }
+
+/* ── 말풍선 ───────────────────────────────────────────────── */
+.msg { display: flex; gap: 18px; }
+
+/* 사용자 발화 — 오른쪽으로 밀고 인용문처럼 처리합니다 */
+.msg--user {
+  justify-content: flex-end;
+  margin-bottom: 26px;
+}
+.msg--user .msg__body {
+  max-width: 40rem;
+  padding: 12px 20px;
+  background: var(--paper-3);
+  border-right: 2px solid var(--accent);
+  font-style: italic;
+  color: var(--ink-2);
+}
+
+/* 봇 발화 — 편집 지면처럼 넓게 펼칩니다 */
+.msg--bot .msg__body {
+  max-width: 44rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 이모지 대신 세로 괘선 + 마름모 */
+.msg__avatar {
+  position: relative;
+  width: 13px;
+  flex-shrink: 0;
+  margin-top: 9px;
+  border-left: 1px solid var(--rule);
+  font-size: 0;
+  color: transparent;
+}
+.msg__avatar::after {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: 0;
+  width: 5px;
+  height: 5px;
+  background: var(--brass);
+  transform: rotate(45deg);
+}
+
+.msg__p { margin: 0 0 1.05em; }
+.msg__p:last-child { margin-bottom: 0; }
+
+.msg__body strong { font-weight: 600; color: var(--ink); }
+.msg__body em { font-style: italic; }
+.msg__body code {
+  font-family: var(--font-label);
+  font-size: .9em;
+  letter-spacing: .02em;
+  padding: 1px 5px;
+  background: var(--paper-3);
+  border: 1px solid var(--rule-2);
+}
+
+.msg__list {
+  margin: 0 0 1.05em;
+  padding-left: 0;
+  list-style: none;
+}
+.msg__list li {
+  position: relative;
+  padding-left: 22px;
+  margin-bottom: .5em;
+}
+.msg__list li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: .78em;
+  width: 9px;
+  height: 1px;
+  background: var(--accent);
+}
+
+/* 번호 목록 — 불릿 괘선을 끄고 숫자를 살립니다.
+   전에는 블록 타입이 무조건 'list' 라서 1. 2. 3. 의 번호가 사라졌습니다. */
+.msg__list--ordered {
+  padding-left: 1.75em;
+  list-style: decimal;
+}
+.msg__list--ordered li { padding-left: 3px; }
+.msg__list--ordered li::before { content: none; }
+.msg__list--ordered li::marker {
+  font-family: var(--font-label);
+  font-size: .88em;
+  color: var(--accent);
+}
+
+/* ── 답변 안의 소제목 ──────────────────────────────────────
+   프롬프트가 '## 지금 바로 시작하기 좋은 작품' 형태로 묶음 제목을
+   내보냅니다. 표제처럼 크게 만들면 대화 흐름을 끊으므로,
+   본문보다 조금 작은 라벨 서체 + 머리카락 선으로 구획만 나눕니다. */
+.msg__h {
+  margin: 1.7em 0 .7em;
+  font-family: var(--font-label);
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: .04em;
+}
+.msg__h:first-child { margin-top: 0; }
+.msg__h--1 {
+  font-size: .82rem;
+  text-transform: uppercase;
+  color: var(--accent);
+  padding-bottom: .4em;
+  border-bottom: 1px solid var(--rule-2);
+}
+.msg__h--2 {
+  font-size: .9rem;
+  letter-spacing: .02em;
+}
+
+/* 수평선 — '---' 를 글자로 보여주지 않고 실제 괘선으로 */
+.msg__hr {
+  margin: 1.5em 0;
+  border: 0;
+  border-top: 1px solid var(--rule-2);
+}
+
+/* 인용문 */
+.msg__quote {
+  margin: 0 0 1.05em;
+  padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--rule);
+  color: var(--ink-2);
+  font-style: italic;
+}
+
+/* 코드블록 — 가로로 넘치면 잘리지 않고 스크롤되게 */
+.msg__pre {
+  margin: 0 0 1.05em;
+  padding: 12px 14px;
+  overflow-x: auto;
+  background: var(--paper-3);
+  border: 1px solid var(--rule-2);
+}
+.msg__pre code {
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: .85em;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+/* 표 — 좁은 화면에서 레이아웃을 밀어내지 않도록 감싸서 스크롤 */
+.msg__table-wrap {
+  margin: 0 0 1.05em;
+  overflow-x: auto;
+}
+.msg__table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: .93em;
+}
+.msg__table th,
+.msg__table td {
+  padding: 7px 12px 7px 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--rule-2);
+}
+.msg__table th {
+  font-family: var(--font-label);
+  font-size: .82em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--ink-3);
+  border-bottom-color: var(--rule);
+}
+.msg__table tbody tr:last-child th,
+.msg__table tbody tr:last-child td { border-bottom: 0; }
+
+/* 답변 본문 안의 링크 — 카드 링크와 구분되게 밑줄만 */
+.msg__body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: .18em;
+}
+.msg__body a:hover { color: var(--accent-2); }
+
+/* 스트리밍 커서 */
+.cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -.14em;
+  background: var(--accent);
+  animation: blink 1.05s steps(2, start) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ── 진행 표시 ────────────────────────────────────────────── */
+/* 전에는 "연결 중…" 한 마디만 띄우던 자리라 라벨 조판(대문자 + 넓은 자간)이었습니다.
+   지금은 문장이 들어가므로 자간을 좁히고 대문자 변환을 뺐습니다 —
+   10.5px 에 자간 .16em 로 한 문장을 쓰면 읽기 어렵습니다. */
+.thinking {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 0 0 18px;
+  font-family: var(--font-label);
+  font-size: 12px;
+  letter-spacing: .02em;
+  color: var(--ink-3);
+}
+
+/* 경과 시간 — 문구보다 한 단계 약하게. 숫자가 주인공이 아닙니다. */
+.thinking__elapsed {
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  color: var(--rule);
+  font-variant-numeric: tabular-nums; /* 자릿수가 바뀔 때 문구가 밀리지 않게 */
+}
+
+.spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  align-self: center;
+  border: 1px solid var(--rule);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 회전 애니메이션을 줄여달라고 설정한 사용자에게는 멈춰 보여줍니다.
+   깜빡임·회전에 민감한 경우가 있어 접근성 기본 배려입니다. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; border-top-color: var(--accent); }
+}
+
+.tools {
+  list-style: none;
+  margin: 0 0 20px;
+  padding: 0 0 0 17px;
+  border-left: 1px solid var(--rule-2);
+}
+.tools__item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.tools__item--running { color: var(--ink-3); }
+.tools__item--done .tools__label { color: var(--ink-2); }
+
+.tools__icon {
+  flex-shrink: 0;
+  width: 13px;
+  font-size: 11px;
+  color: var(--accent);
+  text-align: center;
+}
+.tools__label { font-variant: small-caps; letter-spacing: .04em; }
+.tools__query { font-style: italic; color: var(--ink-3); }
+.tools__result { margin-left: auto; padding-left: 12px; white-space: nowrap; }
+
+/* ── 책 목록 — 도서 목록집의 항목 ─────────────────────────── */
+.cards {
+  margin: 26px 0 6px;
+  border-top: 1px solid var(--rule);
+}
+
+.card {
+  display: flex;
+  gap: 20px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--rule-2);
+}
+
+.card__cover {
+  flex-shrink: 0;
+  width: 74px;
+}
+.card__cover img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+}
+.card__cover-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 2 / 3;
+  border: 1px solid var(--rule);
+  background: var(--paper-3);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 21px;
+  color: var(--ink-3);
+}
+
+.card__info { min-width: 0; flex: 1 1 auto; }
+
+.card__title {
+  margin: 0 0 3px;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 21px;
+  line-height: 1.25;
+  letter-spacing: .008em;
+}
+.card__subtitle {
+  display: block;
+  font-size: 15px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+.card__meta {
+  margin: 0 0 9px;
+  font-size: 14px;
+  color: var(--ink-2);
+  font-variant: small-caps;
+  letter-spacing: .035em;
+}
+
+.card__series {
+  margin: 0 0 9px;
+  font-size: 13.5px;
+  font-style: italic;
+  color: var(--ink-3);
+}
+
+/* 표식 — 색 알약이 아니라 활자로 처리합니다.
+   가운뎃점으로 이어 붙여 한 줄 캡션처럼 보이게 합니다. */
+.card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.badge {
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.badge + .badge::before {
+  content: '·';
+  margin: 0 9px;
+  color: var(--rule);
+  letter-spacing: 0;
+}
+.badge__sub { letter-spacing: .06em; }
+.badge--rating { color: var(--brass); letter-spacing: .08em; }
+.badge--free { color: var(--accent); }
+.badge--verified { color: var(--ink-3); }
+/* 오디오북 배지에 색 규칙이 없어 다른 배지와 톤이 어긋나 있었습니다 */
+.badge--audio { color: var(--ink-3); }
+
+.card__tags {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.card__tags li {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-2);
+}
+.card__tags li + li::before {
+  content: '/';
+  margin: 0 8px;
+  color: var(--rule);
+  font-style: normal;
+}
+
+.card__moods {
+  margin: 0 0 8px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.card__moods-label {
+  display: inline;
+  margin-right: 9px;
+}
+
+.card__warning {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+}
+/* 기본 펼침 삼각형(▶)은 편집 지면에 어울리지 않으므로 지우고
+   활자 기호(+ / −)로 바꿉니다. */
+.card__warning summary {
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.card__warning summary::-webkit-details-marker { display: none; }
+.card__warning summary::before {
+  content: '+';
+  display: inline-block;
+  width: 13px;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.card__warning[open] summary::before { content: '\2212'; }
+.card__warning p {
+  margin: 7px 0 0;
+  color: var(--ink-2);
+  font-style: italic;
+}
+
+.card__free {
+  margin: 12px 0 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule-2);
+}
+.card__free-label {
+  display: block;
+  margin-bottom: 7px;
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.card__free-links,
+.card__links { display: flex; flex-wrap: wrap; align-items: baseline; }
+.card__links { margin-top: 9px; }
+
+/* 외부 링크 — 밑줄 하나로 충분합니다 */
+.extlink {
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  text-decoration: none;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1px;
+  transition: color .18s ease, border-color .18s ease;
+}
+.extlink + .extlink { margin-left: 16px; }
+.extlink:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.extlink--primary { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.extlink--primary:hover { color: var(--accent-2); border-bottom-color: var(--accent-2); }
+
+/* ── 안내 · 오류 ──────────────────────────────────────────── */
+.notice {
+  margin: 12px 0 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-3);
+}
+
+.alert {
+  margin: 20px 0;
+  padding: 15px 20px;
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+}
+.alert strong {
+  display: block;
+  margin-bottom: 5px;
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+.alert p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  white-space: pre-line;
+}
+
+/* ── 아래 입력부 ──────────────────────────────────────────── */
+.footer {
+  flex-shrink: 0;
+  padding: 18px 0 26px;
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+}
+
+.composer { margin: 0; }
+
+.composer__box {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  transition: border-color .18s ease;
+}
+.composer__box:focus-within { border-color: var(--accent); }
+
+.composer__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  background: none;
+  padding: 15px 18px;
+  font-family: var(--font-body);
+  font-size: 16.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  max-height: 168px;
+  overflow-y: auto;
+}
+.composer__input:focus { outline: none; }
+.composer__input::placeholder { color: var(--ink-3); font-style: italic; }
+.composer__input:disabled { opacity: .55; }
+
+.composer__btn {
+  flex-shrink: 0;
+  align-self: stretch;
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 0 24px;
+  font-family: var(--font-label);
+  font-size: 11px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease;
+}
+.composer__btn:hover:not(:disabled) { background: var(--accent-soft); }
+.composer__btn:disabled { color: var(--ink-3); cursor: default; }
+.composer__btn--stop { color: var(--ink-2); }
+
+.composer__foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 9px;
+}
+.composer__count {
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  letter-spacing: .12em;
+  color: var(--ink-3);
+}
+.composer__count--warn { color: var(--accent); }
+
+.stats {
+  margin: 11px 0 0;
+  text-align: right;
+}
+
+/* ── 반응형 ───────────────────────────────────────────────── */
+@media (max-width: 860px) {
+  .app { padding: 0 22px; }
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    padding-top: 26px;
+  }
+  .header__actions { padding-bottom: 0; margin-left: -15px; }
+  .header__title { white-space: normal; }
+  .msg--user .msg__body { max-width: 100%; }
+}
+
+@media (max-width: 620px) {
+  html, body { font-size: 16px; }
+  .app { padding: 0 16px; }
+  /* 조작부 4개가 한 줄에 안 들어가는 폭입니다. 접히게 두면 두 번째 줄
+     첫 항목에 세로 구분선만 덩그러니 남으므로, 이 폭에서는 구분선을 버리고
+     간격으로 구분합니다. 반쯤 잘린 괘선을 남기지 않는 쪽이 낫습니다. */
+  .header__actions { column-gap: 4px; }
+  .header__saved,
+  .header__reset,
+  .header__theme,
+  .header__lang-select { border-left: 0; padding-left: 8px; padding-right: 8px; }
+  .card { gap: 15px; }
+  .card__cover { width: 58px; }
+  .card__title { font-size: 19px; }
+  .composer__btn { padding: 0 17px; }
+  .empty__icon { width: 112px; }
+}
+
+/* ── 움직임을 줄이는 설정을 존중합니다 ────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+/* ── 인쇄 ─────────────────────────────────────────────────── */
+@media print {
+  body::before, .footer, .header__actions { display: none; }
+  .app { max-width: none; border: 0; }
+  .chat { overflow: visible; }
+}

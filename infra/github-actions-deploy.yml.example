@@ -1,0 +1,155 @@
+# ============================================================
+#  GitHub Actions 자동 배포 — 정의만 담긴 예시 파일입니다
+# ============================================================
+#
+#  ★ 왜 .github/workflows/ 가 아니라 여기 있는가
+#
+#    GitHub 는 Personal Access Token 으로 `.github/workflows/` 아래 파일을
+#    만들거나 고치는 것을 거부합니다. `workflow` 권한이 따로 있어야 합니다.
+#    (실제 오류: "refusing to allow a Personal Access Token to create or
+#     update workflow ... without `workflow` scope")
+#
+#    자동 배포는 아직 켜지 않은 상태라, 권한을 늘리는 대신 경로를 옮겼습니다.
+#    설계는 저장소에 남고 푸시는 막히지 않습니다.
+#
+#  ★ 켜는 방법
+#
+#    mkdir -p .github/workflows
+#    cp infra/github-actions-deploy.yml.example .github/workflows/deploy.yml
+#
+#    그다음 푸시하려면 토큰에 `workflow` 권한을 추가하세요.
+#    (github.com/settings/tokens → 토큰 선택 → workflow 체크 → Update token)
+#    또는 웹 UI 로 파일을 만들면 권한이 필요 없습니다.
+#
+#  ⚠️ 아래 준비를 마치지 않으면 켜도 실패하기만 합니다.
+#     아래 준비를 마치지 않으면 push 할 때 실패하기만 합니다.
+#     당장 쓰지 않으려면 그대로 두세요. 저장소를 GitHub 에 올리지 않았다면
+#     이 파일은 아무 일도 하지 않습니다.
+#
+#  켜기 전에 해야 할 일
+#    1) CloudShell:  GITHUB_REPO=사용자명/저장소명 bash infra/setup-github-oidc.sh
+#    2) GitHub 저장소 > Settings > Secrets and variables > Actions 에 등록
+#         AWS_DEPLOY_ROLE_ARN    (1번 출력값)
+#         BEDROCK_MODEL_ID       us.anthropic.claude-sonnet-4-6
+#         GOOGLE_BOOKS_API_KEY   (있으면)
+#         HARDCOVER_TOKEN        (있으면)
+#         CONTACT_EMAIL
+#         ALERT_EMAIL            (있으면)
+#
+#  현재 배포 방식은 zip 업로드입니다. docs/05-runbook.md 참고.
+# ============================================================
+
+name: Deploy
+
+on:
+  # 자동 실행을 껐습니다. Actions 탭에서 손으로 눌러야만 돕니다.
+  # 자동 배포를 켜려면 아래 push 블록의 주석을 해제하세요.
+  # push:
+  #   branches: [main]
+  workflow_dispatch:
+
+# OIDC 토큰을 받으려면 id-token: write 가 반드시 있어야 합니다.
+permissions:
+  id-token: write
+  contents: read
+
+# 동시에 두 개가 배포되면 .state 와 CloudFront 갱신이 서로 충돌합니다.
+concurrency:
+  group: deploy-aws
+  cancel-in-progress: false
+
+jobs:
+  # ── 1단계: 검사 (실패하면 배포하지 않습니다) ──────────────
+  test:
+    name: 코드 검사
+    runs-on: ubuntu-latest
+    # 이 잡에는 AWS 자격증명이 없습니다.
+    # 아래 두 값이 없으면 AWS SDK 가 인스턴스 메타데이터에서 자격증명을
+    # 찾느라 수십 초를 기다립니다. (캐시 실패는 코드가 무시하고 진행합니다)
+    env:
+      AWS_EC2_METADATA_DISABLED: 'true'
+      AWS_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 백엔드 의존성 설치
+        working-directory: backend
+        run: npm ci
+
+      - name: 문법 검사
+        working-directory: backend
+        run: npm run check
+
+      - name: 정책 검사 (의도 분류 · 미성년 차단)
+        working-directory: backend
+        run: npm run test:policy
+
+      - name: 에이전트 루프 · 예산 · 마감 검사
+        working-directory: backend
+        run: npm run test:agent
+
+      - name: 기능 검사 (카드 선별 · 제목 추출 · 병합)
+        working-directory: backend
+        run: npm run test:features
+
+      # 외부 도서 API 를 실제로 호출하므로 그쪽 장애로 실패할 수 있습니다.
+      # 그런 이유로 배포를 막지는 않되, 결과는 로그에 남깁니다.
+      - name: 통합 스모크 (참고용, 실패해도 배포 진행)
+        working-directory: backend
+        continue-on-error: true
+        run: npm run smoke
+
+      - name: 프론트엔드 검사 · 빌드
+        working-directory: frontend
+        run: npm ci && npm run test:saved && npm run check:render && npm run build
+
+  # ── 2단계: 배포 ───────────────────────────────────────────
+  deploy:
+    name: AWS 배포
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # 액세스 키 없이 임시 자격증명을 받습니다 (OIDC)
+      - name: AWS 자격증명 (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: github-deploy
+
+      - name: 배포
+        # infra/config.sh 의 load_secrets 가 secrets.env 가 없으면
+        # 환경 변수를 씁니다. 그래서 비밀 파일을 만들지 않습니다.
+        env:
+          BEDROCK_MODEL_ID: ${{ secrets.BEDROCK_MODEL_ID }}
+          GOOGLE_BOOKS_API_KEY: ${{ secrets.GOOGLE_BOOKS_API_KEY }}
+          HARDCOVER_TOKEN: ${{ secrets.HARDCOVER_TOKEN }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          CONTACT_EMAIL: ${{ secrets.CONTACT_EMAIL }}
+        run: bash infra/update.sh
+
+      - name: 배포 결과 요약
+        if: always()
+        run: |
+          {
+            echo "### 배포 결과"
+            echo ""
+            if [ -f infra/.state ]; then
+              echo "| 항목 | 값 |"
+              echo "|---|---|"
+              grep -E '^(DISTRIBUTION_DOMAIN|DISTRIBUTION_ID|API_ENDPOINT)=' infra/.state \
+                | sed 's/^/| /; s/=/ | /; s/$/ |/'
+            else
+              echo "상태 파일이 없습니다 — 배포가 중단되었을 수 있습니다."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
