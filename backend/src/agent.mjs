@@ -22,7 +22,7 @@ import { BedrockRuntimeClient, ConverseStreamCommand } from '@aws-sdk/client-bed
 import { config } from './lib/config.mjs';
 import { log } from './lib/log.mjs';
 import { fuzzyKey } from './lib/isbn.mjs';
-import { SYSTEM_PROMPT } from './prompt.mjs';
+import { SYSTEM_PROMPT, detectReplyLanguage, languageDirective } from './prompt.mjs';
 import { toolConfig, runTool, TOOL_LABELS } from './tools/index.mjs';
 import { selectForCards, logSelection, missingTitles } from './tools/present.mjs';
 
@@ -113,6 +113,13 @@ export async function runAgent({ userMessage, history = [], secrets = {}, emit, 
   let finalText = '';
   const usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
 
+  // ★ 답변 언어를 **이번 턴의 사용자 메시지**로 판정합니다.
+  //
+  //   히스토리가 아니라 현재 입력을 봅니다. 앞선 턴이 한국어로 잘못 나갔더라도
+  //   지금 입력이 영어면 영어로 돌아옵니다 — 대화 이력 오염을 끊는 지점입니다.
+  //   (실측 사고: 영어로 세 번 물었는데 1번 턴이 한국어로 나가자 2·3번도 한국어)
+  const replyLanguage = detectReplyLanguage(userMessage);
+
   const startedAt = Date.now();
 
   // 요청 전체를 감싸는 하나의 마감. 도구·LLM 턴·보충 조회가 전부 이 안에 듭니다.
@@ -145,7 +152,7 @@ export async function runAgent({ userMessage, history = [], secrets = {}, emit, 
 
   for (let iteration = 0; iteration < config.limits.maxToolIterations; iteration += 1) {
     const turn = await streamOneTurn({
-      messages, emit, iteration, intent, deadlineAt: requestDeadlineAt,
+      messages, emit, iteration, intent, deadlineAt: requestDeadlineAt, replyLanguage,
     });
     accumulate(turn);
 
@@ -221,7 +228,7 @@ export async function runAgent({ userMessage, history = [], secrets = {}, emit, 
     try {
       const closing = await streamOneTurn({
         messages, emit, iteration: config.limits.maxToolIterations, intent,
-        deadlineAt: requestDeadlineAt,
+        deadlineAt: requestDeadlineAt, replyLanguage,
       });
       accumulate(closing);
     } catch (err) {
@@ -451,10 +458,14 @@ function withDeadline(promise, ms, onTimeout) {
 /**
  * ConverseStream 한 턴을 소비하고 결과를 조립한다.
  */
-async function streamOneTurn({ messages, emit, iteration, intent = 'BOOK', deadlineAt = 0 }) {
+async function streamOneTurn({
+  messages, emit, iteration, intent = 'BOOK', deadlineAt = 0, replyLanguage = 'ko',
+}) {
   const command = new ConverseStreamCommand({
     modelId: config.bedrock.modelId,
-    system: [{ text: SYSTEM_PROMPT + intentDirective(intent) }],
+    // 언어 지시를 **맨 끝**에 둡니다. 근접성 때문입니다 — 앞쪽 불릿 한 줄로는
+    // 한국어 도구 결과와 한국어 프롬프트의 무게를 이기지 못했습니다(실측).
+    system: [{ text: SYSTEM_PROMPT + intentDirective(intent) + languageDirective(replyLanguage) }],
     messages,
     // ⚠️ temperature 와 topP 를 동시에 지정하지 않습니다.
     //

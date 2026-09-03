@@ -71,17 +71,23 @@ for (const f of files) {
 
 // ── 3단계: 프롬프트가 온전한지 ───────────────────────────────
 // 위 백틱 사고는 프롬프트를 조용히 잘라먹습니다. 로드는 되면서
-// 프롬프트만 짧아지는 변형도 있을 수 있어 길이를 확인합니다.
+// 프롬프트만 짧아지는 변형도 있습니다.
+//
+// 길이 하한으로 잡았더니 프롬프트를 의도적으로 줄일 때 걸렸습니다
+// (10,913자 → 1,977자로 단순화). 길이는 설계 결정이라 기준이 못 됩니다.
+// 대신 각 절의 표지를 확인합니다 — 중간에 끊기면 뒤쪽 표지가 사라집니다.
+const PROMPT_MARKERS = ['# 절대 규칙', '# 답변 방법', '# 검색 방법', '# 하지 말 것'];
 try {
   const { SYSTEM_PROMPT } = await import(new URL('prompt.mjs', SRC).href);
-  const len = SYSTEM_PROMPT?.length ?? 0;
-  const MIN = 4000;
-  if (len < MIN) {
+  const text = SYSTEM_PROMPT ?? '';
+  const missing = PROMPT_MARKERS.filter((m) => !text.includes(m));
+  if (missing.length) {
     failed += 1;
-    console.error(`✗ 시스템 프롬프트가 너무 짧습니다 (${len}자 < ${MIN}자)`);
+    console.error(`✗ 시스템 프롬프트에 빠진 절이 있습니다: ${missing.join(', ')}`);
     console.error('   템플릿 리터럴이 중간에 끊겼을 수 있습니다. 백틱을 확인하세요.');
+    console.error('   절 제목을 일부러 바꿨다면 scripts/check.mjs 의 PROMPT_MARKERS 도 맞춰주세요.');
   } else {
-    console.log(`   시스템 프롬프트 ${len}자`);
+    console.log(`   시스템 프롬프트 ${text.length}자 / ${PROMPT_MARKERS.length}개 절 확인`);
   }
 } catch (err) {
   failed += 1;

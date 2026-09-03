@@ -196,10 +196,13 @@ console.log('\n■ 시스템 프롬프트 (요구 1·2·3)');
 has('기본 해석 = 그 주제의 책', promptSrc.includes('이 사람은 이 주제에 관한 책을 찾고 있다'));
 has('키워드 예시 표', promptSrc.includes('"한국전쟁"') && promptSrc.includes('"제육볶음"'));
 has('주제 검열 없음 선언', promptSrc.includes('도서관은 주제로 책을 검열하지 않습니다'));
-has('전환 형식 규정', promptSrc.includes('직접 도와드릴 수 없지만'));
+// 전에는 사용자에게 보일 문장까지 프롬프트에 못 박고("직접 도와드릴 수 없지만",
+// "레시피를 직접 알려드리진 못하지만") 그 문구를 그대로 검사했습니다.
+// 문구를 다듬을 때마다 테스트가 깨져서, 요구사항이 아니라 표현을 지키고 있었습니다.
+// 지금은 "책이 아닌 요청도 책으로 전환한다"는 요구만 확인합니다.
+has('전환 형식 규정', /못 한다고 밝히고[\s\S]{0,80}책을 찾아/.test(promptSrc));
 has('레시피·코드 전환 예시',
-  promptSrc.includes('레시피를 직접 알려드리진 못하지만') &&
-  promptSrc.includes('코드를 직접 써드릴 수는 없지만'));
+  promptSrc.includes('레시피') && promptSrc.includes('코드 작성'));
 has('거절만 하면 실패라고 명시', promptSrc.includes('로 끝내는 답변은 실패'));
 has('미성년 절대선 유지', promptSrc.includes('미성년자를 성적으로 다루는 요청'));
 // 상담 기관 안내는 넣지 않습니다. 책을 물었는데 전화번호가 나오면 이상합니다.

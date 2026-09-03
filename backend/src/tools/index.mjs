@@ -362,11 +362,30 @@ export async function runTool(name, input, secrets) {
         // 영어권 검색에 매번 호출하면 지연만 늘고 결과는 안 나옵니다.
         const wantKorean = language === 'ko' || hasHangul(hint.rawQuery);
 
-        // 알라딘에는 한국어 장르어를 보냅니다 ("스릴러"). 영어 슬러그는 안 통합니다.
-        const alQuery = [hint.keywords, wantKorean && hint.genre ? hint.genre.aladin : '']
+        // ★ 알라딘·국중에는 **한국어 조각만** 보냅니다.
+        //
+        //   실제 사고: 영어권 사용자가 "an old korean book" 이라고 물었습니다.
+        //   interpret() 이 'korean' 이라는 낱말을 보고 language='ko' 로 잡고,
+        //   남은 키워드 "an old book" 을 그대로 알라딘에 보냈습니다.
+        //   알라딘은 한국 서점입니다. 영어 문장으로는 0권이 나옵니다.
+        //   국중도 0권 → "국내 도서 검색이 원활하지 않다" 는 안내가 사용자에게 갔고,
+        //   모델은 자기 지식의 한국 책을 한국어로 나열했습니다.
+        //
+        //   → 영어 키워드는 국내 소스에 보내지 않습니다. 장르는 사전에서 한국어로
+        //     번역되므로("thriller" → "스릴러") 그건 쓸 수 있습니다.
+        //     보낼 한국어가 하나도 없으면 아래에서 국내 소스를 아예 건너뜁니다.
+        const alQuery = [
+          hasHangul(hint.keywords) ? hint.keywords : '',
+          wantKorean && hint.genre ? hint.genre.aladin : '',
+        ]
           .filter(Boolean)
           .join(' ')
-          .trim() || hint.rawQuery;
+          .trim()
+          || (hasHangul(hint.rawQuery) ? hint.rawQuery : '');
+
+        // 국내 소스를 부를 의미가 있는가. 보낼 한국어가 없으면 부르지 않습니다 —
+        // 두 번의 왕복을 낭비하고 사용자에게 잘못된 안내까지 가게 됩니다.
+        const koQueryUsable = wantKorean && alQuery.length > 0;
 
         const relevance = { genre: hint.genre, keywords: hint.keywords, language };
 
@@ -378,7 +397,7 @@ export async function runTool(name, input, secrets) {
           //    genre 도 포함합니다 — 같은 원문이라도 해석된 장르가 다르면
           //    소스별 질의와 필터가 달라집니다.
           'search_books',
-          { gbQuery, plainQuery, alQuery, language, limit, recent, yearFrom, wantKorean, genre: hint.genre?.key ?? '' },
+          { gbQuery, plainQuery, alQuery, language, limit, recent, yearFrom, koQueryUsable, genre: hint.genre?.key ?? '' },
           async () => {
             // ★ 언어별로 소스를 갈라 부릅니다.
             //
@@ -390,7 +409,25 @@ export async function runTool(name, input, secrets) {
             //
             //   그래서 한국어 맥락에서는 국내 소스만 먼저 씁니다.
             //   그게 0권이면 그때만 영어권 소스로 물러납니다(아무것도 없는 것보다는 낫습니다).
-            if (wantKorean) {
+            // 한국 책을 원하지만 보낼 한국어 검색어가 없는 경우
+            // (예: 영어로 "an old korean book"). 국내 소스는 0권이 확정이므로
+            // 건너뛰고 Google Books 로 갑니다. langRestrict=ko 라 한국어 책은 나옵니다.
+            if (wantKorean && !koQueryUsable) {
+              log.info('한국 책 요청이지만 한국어 검색어가 없음 — 국내 소스 건너뜀', {
+                rawQuery: hint.rawQuery, keywords: hint.keywords,
+              });
+              const gb = await Promise.allSettled([
+                searchGoogleBooks({
+                  query: gbQuery, apiKey: gbKey, limit, language,
+                  orderBy: recent ? 'newest' : 'relevance',
+                }),
+              ]);
+              const gbFailures = logSettled('search_books.ko-via-gb', gb, ['googleBooks']);
+              const merged = mergeBooks(gb.map(unwrap), limit, { preferRecent: recent, relevance });
+              return { merged, failures: gbFailures, sources: 'ko-via-gb' };
+            }
+
+            if (koQueryUsable) {
               const ko = await Promise.allSettled([
                 searchAladin({ query: alQuery, key: alKey, limit, recent }),
                 // 국립중앙도서관 — 납본 기관이라 국내 출간서가 사실상 전부 있습니다.

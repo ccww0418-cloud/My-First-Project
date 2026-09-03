@@ -176,6 +176,7 @@ await lookupTests();
 await nlkTests();
 await presentTests();
 await backfillTests();
+await languageTests();
 
 console.log(fail ? `\n✗ ${fail}건 실패` : '\n✓ 전부 통과');
 process.exit(fail ? 1 : 0);
@@ -810,4 +811,84 @@ async function backfillTests() {
     check('저자가 다르면 채택하지 않음', r.books.length === 0, `${r.books.length}권`);
     check('확인 실패를 LLM 에게 알림', r.llmText.includes('확인 실패'));
   }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  답변 언어 · 한국어 검색어 라우팅
+// ════════════════════════════════════════════════════════════════
+//
+// ★ 실제 사고 재현 (영어권 사용자 신고)
+//   "I'd like a korean book" / "I've been drained lately. Any comforting novel?"
+//   / "an old korean book" 세 질문에 봇이 **한국어로** 답했습니다.
+//
+//   원인 두 개가 겹쳤습니다.
+//     1) interpret() 이 영어 문장의 'korean' 이라는 낱말을 language='ko' 로 잡고
+//        남은 영어 키워드를 알라딘·국중에 보냄 → 0권 → "국내 도서 검색이 원활하지
+//        않다" 안내 → 모델이 자기 지식의 한국 책을 나열
+//     2) 문맥이 온통 한국어(프롬프트·도구 결과)라 "사용자 언어로 답하라" 는
+//        불릿 한 줄이 밀림. 게다가 첫 턴이 한국어로 나가면 히스토리가 오염돼
+//        이어지는 영어 질문에도 한국어로 답함
+async function languageTests() {
+  const { detectReplyLanguage, languageDirective } = await import('../src/prompt.mjs');
+  const { interpret } = await import('../src/tools/genre.mjs');
+
+  console.log('\n■ 답변 언어 판정 (문자 체계 기준, LLM 판단에 맡기지 않음)');
+  const langCases = [
+    ['I would like a korean book', 'en'],
+    ['I have been drained lately. Any comforting novel?', 'en'],
+    ['an old korean book', 'en'],
+    ['한국 소설 추천해줘', 'ko'],
+    ['韓国の小説を教えて', 'ja'],
+    ['推荐韩国小说', 'zh'],
+  ];
+  for (const [text, want] of langCases) {
+    const got = detectReplyLanguage(text);
+    check(`"${text.slice(0, 34)}" → ${want}`, got === want, got);
+  }
+
+  console.log('\n■ 언어 지시문');
+  check('한국어는 추가 지시 없음 (프롬프트가 이미 한국어)', languageDirective('ko') === '');
+  const en = languageDirective('en');
+  check('영어 지시문이 비어 있지 않음', en.length > 200, `${en.length}자`);
+  check('한국어로 답하지 말라고 명시', en.includes('Do not answer in Korean'));
+  check('겹화살괄호 유지 지시 (카드 매칭 조건)', en.includes('《》'));
+  check('앞선 턴이 한국어였어도 전환하라고 명시', /earlier turns/i.test(en));
+  for (const l of ['ja', 'zh', 'ru']) {
+    check(`${l} 도 지시문 있음`, languageDirective(l).length > 50, `${languageDirective(l).length}자`);
+  }
+
+  console.log('\n■ 영어 질의의 지역어를 답변 언어로 오해하지 않는지');
+  // interpret() 의 language 는 "어떤 나라 책을 원하는가" 이고
+  // detectReplyLanguage 는 "어떤 언어로 답할까" 입니다. 둘은 갈라져 있어야 합니다.
+  for (const q of ['I would like a korean book', 'an old korean book']) {
+    const bookLocale = interpret({ query: q }).language;
+    const reply = detectReplyLanguage(q);
+    check(`"${q}" → 책 지역 ko / 답변 en`, bookLocale === 'ko' && reply === 'en',
+      `책=${bookLocale} 답변=${reply}`);
+  }
+
+  console.log('\n■ 국내 소스에 보낼 한국어 검색어가 있는지 판정');
+  // 알라딘·국중은 한국 서점·도서관입니다. 영어 문장으로는 0권입니다.
+  // 보낼 한국어가 없으면 부르지 않고 Google Books(langRestrict=ko)로 가야 합니다.
+  const koQueryOf = (q) => {
+    const hint = interpret({ query: q });
+    const wantKorean = hint.language === 'ko' || hasHangul(hint.rawQuery);
+    return [
+      hasHangul(hint.keywords) ? hint.keywords : '',
+      wantKorean && hint.genre ? hint.genre.aladin : '',
+    ].filter(Boolean).join(' ').trim()
+      || (hasHangul(hint.rawQuery) ? hint.rawQuery : '');
+  };
+
+  check('"an old korean book" → 보낼 한국어 없음', koQueryOf('an old korean book') === '',
+    JSON.stringify(koQueryOf('an old korean book')));
+  check('"I would like a korean book" → 보낼 한국어 없음',
+    koQueryOf('I would like a korean book') === '',
+    JSON.stringify(koQueryOf('I would like a korean book')));
+  // 장르는 사전이 한국어로 번역해주므로 영어 질의여도 보낼 값이 생깁니다
+  check('"korean thriller" → 장르어가 한국어로', hasHangul(koQueryOf('korean thriller')),
+    JSON.stringify(koQueryOf('korean thriller')));
+  // 한국어 질의는 당연히 그대로 씁니다
+  check('"한국 스릴러" → 한국어 검색어 유지', hasHangul(koQueryOf('한국 스릴러')),
+    JSON.stringify(koQueryOf('한국 스릴러')));
 }
