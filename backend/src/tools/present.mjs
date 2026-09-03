@@ -58,6 +58,16 @@ const MIN_CARDS = Number(process.env.MIN_CARDS || 12);
 const MIN_MATCH_LEN = 2;
 
 /**
+ * 제목에 한글이 있는지. 카드를 채울 때 문자체계를 맞추는 데 씁니다.
+ *
+ * 부제까지 보는 이유: 알라딘·국중 결과는 제목이 영문이고 부제가 한글인
+ * 번역서가 있습니다(「Norwegian Wood - 상실의 시대」).
+ */
+function hasHangulTitle(book) {
+  return /[\u3131-\uD79D]/.test(`${book?.title ?? ''} ${book?.subtitle ?? ''}`);
+}
+
+/**
  * 저자 이름 뒤에 문장이 시작됐음을 알리는 낱말.
  * **낱말 전체**로 비교합니다 — 접두 비교를 하면 "가와바타" 가 조사 `가` 로 잘립니다.
  */
@@ -457,11 +467,36 @@ export function selectForCards({ answer, books, limit = FALLBACK_LIMIT, minCards
     // 언급된 책이 먼저, 그다음 남은 후보로 최소 개수까지 채웁니다.
     // 순서를 지키는 이유: 답변을 읽으며 위에서부터 짚어볼 수 있어야 합니다.
     const picked = [...mentioned];
+
+    // ★ 채우는 책의 **문자체계**를 언급된 책에 맞춥니다.
+    //
+    //   실측 사고 (2026-09-03, 배포 서비스):
+    //     "조용히 위로가 되는 한국 소설 추천해주세요" 에 카드 12장이 나왔는데
+    //     한국 소설은 2장이고 나머지 10장이 이런 것들이었습니다.
+    //       The Bedford Glossary of Critical Theory
+    //       Illiteracy and School Attendance (캐나다 통계국)
+    //       Chihayafuru, Volume 11
+    //       Career of Evil
+    //
+    //   원인: 채우기 필터가 looksAcademic() 하나뿐이었습니다. 만화·스릴러는
+    //   학술서가 아니므로 전부 통과했습니다. "요청과 무관한지" 를 아예 안 봤습니다.
+    //
+    //   이 단계에는 장르·언어 스펙이 없습니다(selectForCards 는 답변과 후보만
+    //   받습니다). 대신 **언급된 책 자체가 신호**입니다 — 답변이 한글 제목의
+    //   책들을 추천했다면 사용자가 원한 건 한국 책입니다.
+    //
+    //   카드가 줄어드는 것은 감수합니다. 「Illiteracy and School Attendance」가
+    //   위로 소설 자리에 앉는 것보다 2장이 나은 거래입니다.
+    const mentionedHangul = mentioned.filter((b) => hasHangulTitle(b)).length;
+    const hangulOnlyFill = mentionedHangul * 2 >= mentioned.length;
+
     if (picked.length < minCards) {
       const inPicked = new Set(picked.map((b) => b?.id ?? b?.title));
       for (const b of unique) {
         if (picked.length >= minCards) break;
         if (inPicked.has(b?.id ?? b?.title)) continue;
+        // 언급된 책이 한글 제목 위주면 채우는 책도 한글 제목으로 제한합니다.
+        if (hangulOnlyFill && !hasHangulTitle(b)) continue;
         // ★ 채우는 책에만 학술서 검사를 적용합니다.
         //
         //   검색 결과에는 「한국 현대 소설 연구」처럼 "그 장르를 연구한 책" 이

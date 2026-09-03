@@ -602,6 +602,45 @@ async function presentTests() {
     check('후보 1권 → 카드 1장', few.books.length === 1, `${few.books.length}장`);
   }
 
+  console.log('\n■ 채우는 책의 문자체계를 언급된 책에 맞추는지');
+  {
+    // ★ 실측 사고 (2026-09-03, 배포 서비스)
+    //   "조용히 위로가 되는 한국 소설 추천해주세요" 에 카드 12장이 나왔는데
+    //   한국 소설은 2장이고 나머지 10장이 이런 것들이었습니다.
+    //     The Bedford Glossary of Critical Theory
+    //     Illiteracy and School Attendance (캐나다 통계국)
+    //     Chihayafuru, Volume 11 / Career of Evil
+    //   채우기 필터가 looksAcademic() 하나뿐이라 만화·스릴러는 전부 통과했습니다.
+    const koAnswer = [
+      '**《달러구트 꿈 백화점》 — 이미예 (2020)** 포근하게 읽힙니다.',
+      '**《불편한 편의점》 — 김호연 (2022)** 조용히 온기를 전합니다.',
+      '**《쇼코의 미소》 — 최은영 (2016)** 단편집이라 부담 없어요.',
+    ].join('\n');
+    const mixed = [
+      bk('불편한 편의점', '김호연'), bk('쇼코의 미소', '최은영'),
+      bk('아몬드', '손원평'), bk('나의 아름다운 정원', '심윤경'),
+      bk('The Bedford Glossary of Critical Theory', 'Ross C. Murfin'),
+      bk('Illiteracy and School Attendance', 'Canada. Dominion Bureau'),
+      bk('Chihayafuru, Volume 11', 'Yuki Suetsugu'),
+      bk('Career of Evil', 'Robert Galbraith'),
+      bk('The Sense of an Ending', 'Julian Barnes'),
+      bk('We Are Not Ourselves', 'Matthew Thomas'),
+    ];
+    const ko = selectForCards({ answer: koAnswer, books: mixed });
+    const eng = ko.books.map((b) => b.title).filter((t) => !/[\u3131-\uD79D]/.test(t));
+    check('영어 무관 도서가 카드에 없음', eng.length === 0, JSON.stringify(eng));
+    check('언급된 한국 책은 남음',
+      ko.books.some((b) => b.title === '불편한 편의점') && ko.books.some((b) => b.title === '쇼코의 미소'),
+      JSON.stringify(ko.books.map((b) => b.title)));
+
+    // 반대 방향도 막지 않아야 합니다 — 영어로 추천했으면 영어 책으로 채웁니다.
+    const enAnswer = '**《The Sense of an Ending》 — Julian Barnes** is quiet.\n'
+      + '**《Career of Evil》 — Robert Galbraith** is a tight thriller.';
+    const en = selectForCards({ answer: enAnswer, books: mixed });
+    check('영어 추천에는 한글 제한이 걸리지 않음', en.books.length > 2, `${en.books.length}장`);
+    check('영어 책이 카드에 남음', en.books.some((b) => b.title === 'The Sense of an Ending'));
+  }
+
   console.log('\n■ 장식 문자가 매칭을 방해하지 않는지');
   // 《》 ** 「」 는 정규화에서 사라지므로 제목만 맞으면 됩니다
   for (const deco of ['《토지》', '**토지**', '「토지」', '"토지"', '토지']) {
