@@ -16,6 +16,8 @@
     "test:features": "node scripts/feature-test.mjs",
     "test:openai": "node scripts/openai-test.mjs",
     "serve:local": "node scripts/local-server.mjs",
+    "check:guardbench": "node scripts/guardbench-contract-check.mjs",
+    "measure:openai": "node scripts/measure-openai.mjs",
     "models": "bash scripts/list-models.sh",
     "check:nlk": "node scripts/nlk-check.mjs"
   },
