@@ -113,9 +113,21 @@ function intentDirective(intent) {
  *   26초 예산으로 답하면 GuardBench 쪽에서 `PROVIDER_TIMEOUT` 이 되어
  *   테스트 결과가 "우리 서비스가 응답하지 않았다" 로 기록됩니다.
  *   환경 변수를 바꾸면 실서비스 채팅까지 같이 짧아지므로 호출자별로 받습니다.
+ *
+ * @param {number} [params.answerReserveMs] 답변 생성에 떼어둘 시간.
+ *   생략하면 `config.limits.answerReserveMs`(15초).
+ *
+ *   ★ budgetMs 를 줄일 때 이것도 **반드시 함께** 줄여야 합니다.
+ *     예약이 전체 예산보다 크면 파생 계산이 3초 하한으로 무너집니다.
+ *
+ *     실측으로 잡은 사고: budgetMs=12000 에 예약 15000 을 그대로 뒀더니
+ *       reserveBound = max(start+3000, start+12000-15000) = start+3000
+ *       toolDeadline = min(start+18000, start+3000)       = start+3000
+ *     도구가 3초만 받아 검색이 거의 못 돌았고, 답변이 74자로 끝났습니다.
+ *     (배포된 엔드포인트 실측, 2026-09-03)
  */
 export async function runAgent({
-  userMessage, history = [], secrets = {}, emit, intent = 'BOOK', budgetMs,
+  userMessage, history = [], secrets = {}, emit, intent = 'BOOK', budgetMs, answerReserveMs,
 }) {
   /** @type {Array} Bedrock에 넘길 메시지 배열 (toolUse/toolResult 포함) */
   const messages = [...history, { role: 'user', content: [{ text: userMessage }] }];
@@ -143,14 +155,28 @@ export async function runAgent({
     : config.limits.requestBudgetMs;
   const requestDeadlineAt = startedAt + effectiveBudgetMs;
 
+  // 답변 생성에 떼어둘 시간.
+  //
+  // ★ 예약이 전체 예산보다 크면 아래 파생 계산이 3초 하한으로 무너집니다.
+  //   그래서 **예산의 60% 를 넘지 않게** 자릅니다. 짧은 예산으로 부를 때
+  //   호출자가 예약까지 같이 줄이는 것을 잊어도 도구가 굶지 않습니다.
+  //   (실측 사고: 12초 예산 + 15초 예약 → 도구 3초 → 답변 74자)
+  //
+  //   60% 인 이유: 남는 40% 가 도구 몫입니다. 12초 예산이면 도구 4.8초 /
+  //   답변 7.2초. 실측에서 답변 생성은 초당 68토큰이라 7초면 약 470토큰,
+  //   권당 한 줄 기준으로 10권이 들어갑니다.
+  const requestedReserve = Number.isFinite(answerReserveMs) && answerReserveMs > 0
+    ? answerReserveMs
+    : config.limits.answerReserveMs;
+  const effectiveReserveMs = Math.min(requestedReserve, Math.floor(effectiveBudgetMs * 0.6));
+
   // 도구 라운드 마감 — 답변 생성 몫을 먼저 떼어둡니다.
   // 이 값이 없으면 도구가 예산을 다 쓰고 답변이 잘립니다(카드도 함께 줄어듦).
   // 하한은 **파생값에만** 겁니다.
-  //   ANSWER_RESERVE_MS 를 REQUEST_BUDGET_MS 보다 크게 잘못 넣어도
-  //   도구가 0초를 받지 않게 3초를 보장합니다.
+  //   예약을 예산보다 크게 잘못 넣어도 도구가 0초를 받지 않게 3초를 보장합니다.
   //   반대로 AGENT_BUDGET_MS 를 직접 0 으로 준 것은 의도이므로 존중합니다 —
   //   여기에 하한을 걸면 명시적 설정을 코드가 덮어쓰게 됩니다.
-  const reserveBound = Math.max(startedAt + 3000, requestDeadlineAt - config.limits.answerReserveMs);
+  const reserveBound = Math.max(startedAt + 3000, requestDeadlineAt - effectiveReserveMs);
   const toolDeadlineAt = Math.min(startedAt + config.limits.agentBudgetMs, reserveBound);
 
   const accumulate = (turn) => {

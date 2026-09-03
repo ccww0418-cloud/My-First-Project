@@ -217,6 +217,39 @@ console.log('\n■ 검증 함수 단위 계약');
   check('마지막 user 메시지를 입력으로', multi.message === '마지막 질문', multi.message);
 }
 
+console.log('\n■ 예산·예약 정합성 (실측으로 잡은 버그)');
+{
+  // ★ 배포 실측에서 드러난 사고 (2026-09-03)
+  //   budgetMs=12000 에 채팅용 answerReserveMs=15000 을 그대로 뒀더니
+  //     reserveBound = max(start+3000, start+12000-15000) = start+3000
+  //     toolDeadline = min(start+18000, start+3000)       = start+3000
+  //   도구가 3초만 받아 검색이 거의 못 돌고 답변이 74자로 끝났습니다.
+  const { config } = await import('../src/lib/config.mjs');
+
+  check('예약이 전체 예산보다 작음',
+    config.openai.answerReserveMs < config.openai.budgetMs,
+    `예약 ${config.openai.answerReserveMs} < 예산 ${config.openai.budgetMs}`);
+
+  // 도구가 받는 시간 = 예산 - 예약. 3초 하한에 걸리면 안 됩니다.
+  const toolMs = config.openai.budgetMs - config.openai.answerReserveMs;
+  check('도구 몫이 3초 하한보다 큼', toolMs > 3000, `${toolMs}ms`);
+
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const agentSrc = fs.readFileSync(
+    path.join(import.meta.dirname, '..', 'src', 'agent.mjs'), 'utf8',
+  );
+  // 호출자가 예약을 함께 줄이는 것을 잊어도 코드가 막아야 합니다.
+  check('agent.mjs 가 예약을 예산 비율로 자름',
+    /Math\.min\(requestedReserve,\s*Math\.floor\(effectiveBudgetMs \* 0\.6\)\)/.test(agentSrc));
+
+  const oaSrc = fs.readFileSync(
+    path.join(import.meta.dirname, '..', 'src', 'openai.mjs'), 'utf8',
+  );
+  check('openai.mjs 가 answerReserveMs 를 함께 넘김',
+    /answerReserveMs:\s*config\.openai\.answerReserveMs/.test(oaSrc));
+}
+
 console.log('\n■ 라우팅이 두 핸들러 모두에 걸렸는지');
 {
   const fs = await import('node:fs');

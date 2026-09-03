@@ -303,6 +303,9 @@ export async function handleChatCompletions({ body, ip }) {
       intent: policy.intent,
       // GuardBench 기본 타임아웃 15초보다 먼저 끝나야 합니다.
       budgetMs: config.openai.budgetMs,
+      // ★ 예약도 함께 줄여야 합니다. 채팅용 15초를 그대로 두면 12초 예산보다
+      //   커서 도구가 3초 하한만 받습니다(실측으로 답변이 74자로 끝났습니다).
+      answerReserveMs: config.openai.answerReserveMs,
     });
   } catch (err) {
     // ★ 모델 호출 실패를 200 으로 감싸지 않습니다.

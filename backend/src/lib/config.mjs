@@ -266,6 +266,19 @@ export const config = {
     budgetMs: num('OPENAI_BUDGET_MS', 12000),
 
     /**
+     * 답변 생성 몫. 채팅용 `answerReserveMs`(15초)를 그대로 쓰면 전체 예산
+     * (12초)보다 커서 파생 계산이 3초 하한으로 무너집니다.
+     *
+     * 실측으로 잡은 사고 (배포 엔드포인트, 2026-09-03):
+     *   예약 15초를 그대로 뒀더니 도구가 3초만 받아 검색이 거의 못 돌고
+     *   "Recommend thrillers similar to Gone Girl" 답변이 74자로 끝났습니다.
+     *
+     * 7초면 도구 5초 / 답변 7초로 갈립니다. 실측 생성 속도 68토큰/초 기준
+     * 약 470토큰이라 권당 한 줄로 10권이 들어갑니다.
+     */
+    answerReserveMs: num('OPENAI_ANSWER_RESERVE_MS', 7000),
+
+    /**
      * 허용하는 model 값.
      *
      * 이 서비스는 Bedrock 모델 **하나**만 씁니다(config.bedrock.modelId).
