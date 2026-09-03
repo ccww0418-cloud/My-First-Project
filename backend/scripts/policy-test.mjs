@@ -215,7 +215,11 @@ has('intentDirective 존재', /function intentDirective/.test(agentSrc));
 has('SERVICE 분기', agentSrc.includes("intent === 'SERVICE'"));
 has('시스템 프롬프트에 합성', agentSrc.includes('SYSTEM_PROMPT + intentDirective(intent)'));
 has('index 가 intent 를 넘김', indexSrc.includes('intent: policy.intent'));
-has('차단 사유별 문구', /function blockReason/.test(indexSrc));
+// blockReason 은 index.mjs 에 있었지만 소비자가 둘이 되어(SSE 채팅 + OpenAI 호환
+// 엔드포인트) policy.mjs 로 옮겼습니다. 문구가 두 곳으로 갈라지면 같은 차단 사유에
+// 다른 안내가 나갑니다. 확인하는 것은 "정의가 한 곳에 있다" 입니다.
+has('차단 사유별 문구', /export function blockReason/.test(policySrc));
+has('차단 문구 정의가 하나뿐', !/function blockReason/.test(indexSrc));
 
 console.log('\n■ 규칙만 쓰는 모드 (POLICY_LLM_CHECK=0)');
 {

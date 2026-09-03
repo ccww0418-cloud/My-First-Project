@@ -296,3 +296,168 @@ $ npm run smoke
 > `RATE_LIMIT_PER_MINUTE` / `RATE_LIMIT_PER_DAY` 환경 변수로 조정하세요.
 > 단, `/api/chat` 도 같은 한도를 쓰므로 비용 방어가 약해집니다.
 > 벤치마크 기간에만 올리고 되돌리는 것을 권합니다.
+
+---
+
+## 12. AI Application Target 연동 (`POST /api/v1/chat/completions`)
+
+위 1~11 절은 `/api/guard` — **정책 판정** 계약입니다. 이 절은 역할이 다릅니다.
+GuardBench 가 이 서비스를 **테스트 대상 애플리케이션**으로 호출하는 경로입니다.
+
+| | `/api/guard` | `/api/v1/chat/completions` |
+|---|---|---|
+| GuardBench 에서의 역할 | 정책 판정 참고 | **AI Application Target** |
+| 응답 | `{"action":"ALLOW"}` | 자연어 답변 |
+| ALLOW/BLOCK 판정 | 우리가 함 | **하지 않음** — Evaluator 의 몫 |
+
+### 계약 출처
+
+추측이 아니라 GuardBench 저장소 소스를 읽고 맞췄습니다.
+
+```
+guardbench-backend @ origin/dev (f9f69f3)
+  docs/integrations/http-endpoint-target.md
+  docs/api/openapi.yaml                          TargetReferenceReq
+  src/main/java/com/guardbench/target/infrastructure/http/
+    OpenAiCompatibleExecutionAdapter.java         요청 본문 · 응답 파싱
+    HttpEndpointHttpClient.java                  헤더 · 상태코드 · Content-Type
+    HttpEndpointProperties.java                  타임아웃 · 본문 상한
+```
+
+### GuardBench 가 보내는 것 — 정확히 이것뿐
+
+```http
+POST {target.identifier}
+Content-Type: application/json
+Accept: application/json
+
+{"model":"<target.model>","messages":[{"role":"user","content":"<TestCase input>"}]}
+```
+
+`HttpEndpointHttpClient` 가 붙이는 헤더는 위 둘입니다. **Authorization·API 키·
+커스텀 헤더는 보내지 않습니다.** 그래서 이 엔드포인트에는 API 키 검증을 두지
+않았습니다 (두면 401/403 → `TARGET_ACCESS_DENIED` 로 전건 실패).
+
+### GuardBench 가 읽는 것
+
+`choices[0].message.content` — 문자열이어야 하고 blank 면 안 됩니다.
+나머지 필드(`id`·`object`·`created`·`usage`·`finish_reason`)는 OpenAI 클라이언트
+호환용으로 함께 채우지만 GuardBench 필수는 아닙니다.
+
+### TestRun 설정값
+
+```json
+{
+  "testSuiteId": 1,
+  "target": {
+    "type": "HTTP_ENDPOINT",
+    "identifier": "https://<CloudFront 도메인>/api/v1/chat/completions",
+    "model": "bookbot",
+    "revision": "선택 — 배포 버전 식별용"
+  },
+  "evaluationProfile": { "checks": ["HARMFUL_CONTENT"], "strictness": "STRICT" }
+}
+```
+
+**★ `identifier` 는 반드시 CloudFront 도메인이어야 합니다.**
+Lambda 함수 URL 을 직접 넣으면 403 이 됩니다. 이 경로는 `/api/chat` 과 같은
+`x-origin-secret` 검증을 거치고, 그 헤더는 CloudFront 가 오리진으로 보낼 때만
+주입합니다. 검증을 빼면 함수 URL 직접 호출로 CloudFront 와 WAF 를 우회하는
+구멍이 생기므로 일부러 걸어두었습니다.
+
+`model` 은 `bookbot`(별칭) 또는 `BEDROCK_MODEL_ID` 실제 값만 받습니다.
+그 외는 400 → `TARGET_CONFIGURATION_INVALID`. 별칭을 둔 이유는 Bedrock 모델을
+교체해도 GuardBench Target 설정을 고치지 않아도 되게 하려는 것입니다.
+
+### 정책 차단은 200 입니다
+
+```
+차단 입력  →  HTTP 200
+              choices[0].message.content = 거절 문구
+              finish_reason = "content_filter"
+```
+
+GuardBench 문서: *"Application 실행에서는 ALLOW 나 BLOCK 을 만들지 않는다.
+그 판정은 Evaluator Adapter 의 책임이다."*
+
+여기서 4xx 를 주면 `TARGET_CONFIGURATION_INVALID`(= 우리 설정이 잘못됐다)로
+기록되고, **안전하게 거절했다는 사실 자체가 측정에서 사라집니다.**
+차단 문구는 `/api/chat` 과 같은 `blockReason()` 을 씁니다(`lib/policy.mjs`).
+
+### 오류 매핑
+
+| 상황 | 우리 응답 | GuardBench 기록 |
+|---|---|---|
+| 정상 | 200 + content | SUCCESS |
+| 정책 차단 | 200 + 거절 문구 | SUCCESS (Evaluator 가 판정) |
+| model 누락·미지원, messages 이상, multimodal, `stream:true` | 400 | `TARGET_CONFIGURATION_INVALID` |
+| 레이트리밋 초과 | 429 | `TARGET_CONFIGURATION_INVALID` |
+| Bedrock 실패·빈 응답 | 502 | `PROVIDER_UNAVAILABLE` |
+| 오리진 비밀 불일치 | 403 | `TARGET_ACCESS_DENIED` |
+
+모델 호출 실패를 200 으로 감싸지 않습니다. 감싸면 오류 문구가 "모델의 답변"
+으로 안전성 평가에 들어갑니다.
+
+### 시간 예산 — 여기가 가장 조심할 곳
+
+GuardBench 의 `guardbench.http-endpoint.request-timeout-ms` **기본값이 15초**
+입니다 (`HttpEndpointProperties.DEFAULT_REQUEST_TIMEOUT_MS = 15_000L`).
+채팅 기본 예산은 26초라 그대로 쓰면 GuardBench 가 먼저 끊고
+`PROVIDER_TIMEOUT`(TestRun 상태 `TIMED_OUT`)으로 기록합니다.
+
+그래서 이 엔드포인트만 `OPENAI_BUDGET_MS=12000` 을 씁니다. 채팅은 26초 그대로
+입니다. GuardBench 쪽 타임아웃을 올렸다면 이 값도 함께 올리세요 — 예산이
+짧으면 도구 검색을 덜 돌아 추천 권수가 줄어듭니다.
+
+### 레이트리밋 — 카운터를 분리했습니다
+
+GuardBench 한 번 실행이 TestCase 수백 건을 보냅니다(공개 예시 253건).
+채팅 한도(분당 10·하루 150)를 그대로 쓰면 벤치마크가 완주하지 못하고,
+반대로 채팅 한도를 올리면 실사용자 쪽 비용 방어가 함께 풀립니다.
+
+```
+채팅            pk = RL#<ip>      분당 10  / 하루 150
+OpenAI 호환     pk = RLOAI#<ip>   분당 30  / 하루 600   (OPENAI_RATE_LIMIT_*)
+```
+
+⚠️ 요청 1건마다 Bedrock 호출이 최소 2회(정책 의도 분류 + 답변 생성) 발생합니다.
+벤치마크를 돌리지 않는 기간에는 `OPENAI_RATE_LIMIT_PER_DAY=0` 으로 잠그세요.
+
+WAF 레이트리밋(IP당 5분 300회)도 함께 걸립니다. 253건을 5분 안에 몰아 보내면
+WAF 가 먼저 막을 수 있습니다.
+
+### 검증 방법
+
+```bash
+# 1) 로컬에서 계약만 확인 (AWS 자격증명 없이, Bedrock 가짜)
+cd backend
+LOCAL_FAKE_BEDROCK=1 npm run serve:local
+node scripts/guardbench-contract-check.mjs
+
+# 2) 배포된 서비스를 대상으로
+TARGET_URL=https://<CloudFront 도메인>/api/v1/chat/completions \
+  node scripts/guardbench-contract-check.mjs
+```
+
+`guardbench-contract-check.mjs` 는 GuardBench 의 `statusFailure()` ·
+`isJson()` · `normalizeResponse()` 를 **그대로 전사**해서, 우리 응답이 어떤
+`TargetFailureCode` 로 기록될지 보여줍니다. 우리 기대가 아니라 상대 코드가
+기준입니다.
+
+단위 테스트는 `npm run test:openai` (47건).
+
+### 구현하지 않은 것
+
+GuardBench 가 쓰지 않으므로 만들지 않았습니다 — streaming/SSE, `stream:true`,
+tool/function calling, multimodal content, embeddings, `/v1/responses`,
+`n>1`, 대화 이력 유지(이 엔드포인트는 무상태이며 세션을 읽거나 쓰지 않습니다).
+
+### 남은 제약
+
+- **비공개망 Target**: GuardBench Worker 는 DNS 결과가 loopback·private·
+  link-local 이면 차단합니다. 로컬 서버를 GuardBench 에 직접 붙일 수 없고,
+  `allow-private-addresses` 나 `allowed-private-hostnames` 설정이 필요합니다.
+- **다중 턴**: GuardBench 는 단일 turn 만 보내므로 마지막 `user` 메시지만
+  사용합니다. 여러 turn 을 보내면 앞선 turn 은 무시됩니다.
+- **실제 Bedrock 응답 시간**: 12초 예산이 실측으로 충분한지는 배포 후 확인이
+  필요합니다. 로컬 검증은 Bedrock 을 가짜로 대체한 것입니다.

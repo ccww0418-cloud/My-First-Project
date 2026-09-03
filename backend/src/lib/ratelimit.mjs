@@ -19,10 +19,25 @@ import { log } from './log.mjs';
 
 /**
  * @param {string} ip
+ * @param {object} [opts] 채팅과 **다른 한도**를 쓰고 싶은 호출자용.
+ * @param {string} [opts.keyPrefix='RL'] DynamoDB 파티션 키 접두사.
+ *   채팅과 카운터를 나누려면 반드시 바꿔야 합니다. 같은 키를 쓰면 한쪽
+ *   트래픽이 다른 쪽 할당량을 깎습니다.
+ * @param {number} [opts.perMinute] 생략하면 `config.limits.perMinute`
+ * @param {number} [opts.perDay] 생략하면 `config.limits.perDay`
+ *
+ *   왜 필요한가: GuardBench 한 번 실행이 TestCase 수백 건을 보냅니다
+ *   (공개 예시가 253건). 채팅 한도(분당 10·하루 150)를 그대로 쓰면
+ *   벤치마크가 절반도 못 돌고, 반대로 한도를 올리면 실사용자 쪽 비용 방어가
+ *   같이 풀립니다. 카운터를 분리해야 둘을 따로 조절할 수 있습니다.
  * @returns {Promise<{ allowed: boolean, reason?: string, retryAfterSeconds?: number }>}
  */
-export async function checkRateLimit(ip) {
+export async function checkRateLimit(ip, opts = {}) {
   if (!ip) return { allowed: true };
+
+  const keyPrefix = opts.keyPrefix || 'RL';
+  const limitPerMinute = Number.isFinite(opts.perMinute) ? opts.perMinute : config.limits.perMinute;
+  const limitPerDay = Number.isFinite(opts.perDay) ? opts.perDay : config.limits.perDay;
 
   const now = Math.floor(Date.now() / 1000);
   const minuteWindow = Math.floor(now / 60) * 60;
@@ -32,7 +47,7 @@ export async function checkRateLimit(ip) {
     const res = await doc.send(
       new UpdateCommand({
         TableName: TABLE,
-        Key: { pk: `RL#${ip}`, sk },
+        Key: { pk: `${keyPrefix}#${ip}`, sk },
         UpdateExpression: 'ADD #c :one SET #t = if_not_exists(#t, :ttl)',
         ExpressionAttributeNames: { '#c': 'count', '#t': 'ttl' },
         ExpressionAttributeValues: { ':one': 1, ':ttl': ttlFromNow(ttlSeconds) },
@@ -48,19 +63,19 @@ export async function checkRateLimit(ip) {
       bump(`DAY#${dayWindow}`, 86400 + 3600),
     ]);
 
-    if (perMinute > config.limits.perMinute) {
-      log.warn('rate limit hit (minute)', { ip, perMinute });
+    if (perMinute > limitPerMinute) {
+      log.warn('rate limit hit (minute)', { ip, perMinute, keyPrefix });
       return {
         allowed: false,
-        reason: `요청이 너무 빠릅니다. 분당 ${config.limits.perMinute}회까지 가능합니다.`,
+        reason: `요청이 너무 빠릅니다. 분당 ${limitPerMinute}회까지 가능합니다.`,
         retryAfterSeconds: minuteWindow + 60 - now,
       };
     }
-    if (perDay > config.limits.perDay) {
-      log.warn('rate limit hit (day)', { ip, perDay });
+    if (perDay > limitPerDay) {
+      log.warn('rate limit hit (day)', { ip, perDay, keyPrefix });
       return {
         allowed: false,
-        reason: `일일 사용 한도(${config.limits.perDay}회)에 도달했습니다. 내일 다시 시도해 주세요.`,
+        reason: `일일 사용 한도(${limitPerDay}회)에 도달했습니다. 내일 다시 시도해 주세요.`,
         retryAfterSeconds: dayWindow + 86400 - now,
       };
     }

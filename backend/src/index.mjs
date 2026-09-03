@@ -13,6 +13,14 @@
  *   GET  /api/health   헬스체크 + 설정 진단
  *   GET  /api/config   프론트가 쓸 예시 질문 등
  *   POST /api/chat     채팅 (SSE 스트리밍)
+ *   POST /api/guard    GuardBench 정책 판정 ({input} → {action})
+ *   POST /api/feedback 답변 평가 접수
+ *   POST /api/v1/chat/completions
+ *                      OpenAI 호환 Chat Completions — GuardBench 가 이 서비스를
+ *                      AI Application Target 으로 호출하는 경로 (openai.mjs).
+ *                      경로에 /api 를 붙여둔 이유: CloudFront 캐시 비헤이비어와
+ *                      API Gateway 라우트가 /api/* 만 이 Lambda 로 보냅니다.
+ *                      /v1/... 을 루트에 노출하려면 인프라 변경이 필요합니다.
  *   OPTIONS *          CORS 프리플라이트
  *
  * SSE 이벤트 스펙 (프론트 src/api.js와 짝을 맞춰야 함):
@@ -28,13 +36,14 @@
 
 import { runAgent } from './agent.mjs';
 import { config, getSecrets, ssmDiagnostics } from './lib/config.mjs';
-import { evaluatePolicy, ALLOW, BLOCK } from './lib/policy.mjs';
+import { evaluatePolicy, ALLOW, BLOCK, blockReason } from './lib/policy.mjs';
 import { log } from './lib/log.mjs';
 import { checkRateLimit, clientIpFrom } from './lib/ratelimit.mjs';
 import { loadHistory, saveHistory, newSessionId, isValidSessionId } from './lib/sessions.mjs';
 import { appendChatLog } from './lib/chatlog.mjs';
 import { saveFeedback } from './lib/feedback.mjs';
 import { suggestionsFor } from './prompt.mjs';
+import { handleChatCompletions } from './openai.mjs';
 
 const SSE_HEADERS = {
   'Content-Type': 'text/event-stream; charset=utf-8',
@@ -350,35 +359,6 @@ async function handleFeedbackRequest(body, headers, ip) {
     : { status: r.status, payload: { error: r.error } };
 }
 
-/**
- * 차단 사유별 안내 문구.
- *
- * 사유를 구분해서 알려주는 이유: "처리할 수 없습니다" 한 줄로 끝내면
- * 사용자는 무엇을 고쳐야 할지 모릅니다. 특히 과길이·빈 입력은
- * 사용자가 바로 고칠 수 있는 문제입니다.
- */
-function blockReason(code) {
-  switch (code) {
-    case 'empty_input':
-      return '어떤 책을 찾으시는지 알려주세요. 주제나 기분, 작가 이름 아무거나 괜찮습니다.';
-    case 'too_long':
-      return '메시지가 너무 깁니다. 핵심만 짧게 적어주시면 찾아드릴게요.';
-    case 'control_chars':
-    case 'encoded_payload':
-      return '입력을 읽을 수 없습니다. 일반 텍스트로 다시 적어주세요.';
-    case 'pii_krrn':
-    case 'pii_card':
-      return '주민등록번호나 카드번호는 입력하지 마세요. 대화는 기록에 남습니다. '
-        + '그 부분을 지우고 다시 물어봐 주세요.';
-    case 'minor_safety':
-      return '이 요청은 도와드릴 수 없습니다.';
-    case 'prompt_injection':
-      return '저는 책을 추천하는 사서입니다. 찾으시는 책에 대해 알려주세요.';
-    default:
-      return '요청을 처리할 수 없습니다. 어떤 책을 찾으시는지 알려주세요.';
-  }
-}
-
 async function healthPayload() {
   const [secrets, dynamo] = await Promise.all([getSecrets(), probeDynamo()]);
 
@@ -645,10 +625,15 @@ const streamingImpl = async (event, responseStream) => {
   const cors = corsHeaders(headers.origin || headers.Origin);
 
   // 스트리밍 응답이 아닌 엔드포인트도 같은 스트림으로 처리합니다.
-  const sendJson = (status, payload) => {
+  const sendJson = (status, payload, extraHeaders) => {
     const s = globalThis.awslambda.HttpResponseStream.from(responseStream, {
       statusCode: status,
-      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...cors },
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+        ...cors,
+        ...(extraHeaders ?? {}),
+      },
     });
     s.write(JSON.stringify(payload));
     s.end();
@@ -681,6 +666,30 @@ const streamingImpl = async (event, responseStream) => {
     if (method === 'POST' && path === '/feedback') {
       const fb = await handleFeedbackRequest(body, headers, clientIpFrom(event));
       return sendJson(fb.status, fb.payload);
+    }
+
+    // ── OpenAI 호환 (GuardBench AI Application Target) ──────
+    // 스트리밍하지 않습니다. 완성된 JSON 한 번으로 응답합니다 —
+    // GuardBench 는 SSE 를 파싱하지 않고 본문 전체를 JSON 으로 읽습니다.
+    //
+    // ★ /api/chat 과 **같은** 오리진 비밀 검증을 겁니다.
+    //   걸지 않으면 이 경로만 함수 URL 직접 호출이 가능해져 CloudFront 와
+    //   WAF 를 통째로 우회하는 구멍이 됩니다(함수 URL 은 AuthType=NONE).
+    //
+    //   GuardBench 는 이 헤더를 보낼 수 없지만 문제가 되지 않습니다 —
+    //   Target URL 을 **CloudFront 도메인**으로 등록하면 CloudFront 가
+    //   오리진으로 보낼 때 주입합니다. 함수 URL 을 직접 등록하면 403 이 되고
+    //   GuardBench 에는 TARGET_ACCESS_DENIED 로 기록됩니다.
+    if (method === 'POST' && path === '/v1/chat/completions') {
+      const gate = checkOriginSecret(headers, await getSecrets());
+      if (!gate.ok) {
+        log.warn('openai 엔드포인트 오리진 검증 실패 — 직접 호출로 추정', {
+          reason: gate.reason, ip: clientIpFrom(event),
+        });
+        return sendJson(403, { error: { message: 'Forbidden', type: 'invalid_request_error', code: 'forbidden' } });
+      }
+      const oa = await handleChatCompletions({ body, ip: clientIpFrom(event) });
+      return sendJson(oa.status, oa.payload, oa.headers);
     }
 
     if (method !== 'POST' || path !== '/chat') {
@@ -793,6 +802,29 @@ export const bufferedHandler = async (event) => {
     if (method === 'POST' && path === '/feedback') {
       const fb = await handleFeedbackRequest(body, headers, clientIpFrom(event));
       return json(fb.status, fb.payload);
+    }
+
+    // ── OpenAI 호환 (GuardBench AI Application Target) ──────
+    // 스트리밍 핸들러와 같은 이유로 오리진 비밀을 검증합니다(위 주석 참고).
+    if (method === 'POST' && path === '/v1/chat/completions') {
+      const gate = checkOriginSecret(headers, await getSecrets());
+      if (!gate.ok) {
+        log.warn('openai 엔드포인트 오리진 검증 실패', {
+          reason: gate.reason, ip: clientIpFrom(event),
+        });
+        return json(403, { error: { message: 'Forbidden', type: 'invalid_request_error', code: 'forbidden' } });
+      }
+      const oa = await handleChatCompletions({ body, ip: clientIpFrom(event) });
+      return {
+        statusCode: oa.status,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+          ...cors,
+          ...(oa.headers ?? {}),
+        },
+        body: JSON.stringify(oa.payload),
+      };
     }
 
     if (method !== 'POST' || path !== '/chat') return json(404, { error: 'Not Found', path });

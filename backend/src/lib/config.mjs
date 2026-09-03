@@ -239,6 +239,69 @@ export const config = {
     saveIp: process.env.CHAT_LOG_SAVE_IP === '1',
   },
 
+  /**
+   * OpenAI-compatible Chat Completions 엔드포인트 (POST /api/v1/chat/completions)
+   *
+   * GuardBench 가 이 서비스를 AI Application Target 으로 호출할 때 쓰는 경로입니다.
+   * 기존 /api/chat 은 그대로 두고 별도 어댑터로 붙였습니다.
+   *
+   * 계약 출처: guardbench-backend@origin/dev
+   *   docs/integrations/http-endpoint-target.md
+   *   src/main/java/com/guardbench/target/infrastructure/http/
+   *     OpenAiCompatibleExecutionAdapter.java / HttpEndpointHttpClient.java
+   *     HttpEndpointProperties.java
+   */
+  openai: {
+    /**
+     * 이 엔드포인트에만 적용하는 요청 예산.
+     *
+     * 12초인 이유: GuardBench 의 `guardbench.http-endpoint.request-timeout-ms`
+     * 기본값이 **15초**입니다(`HttpEndpointProperties.DEFAULT_REQUEST_TIMEOUT_MS`).
+     * 채팅 기본 예산 26초로 답하면 GuardBench 가 먼저 끊고 `PROVIDER_TIMEOUT`
+     * 으로 기록합니다. 응답 직렬화·전송 여유로 3초를 남깁니다.
+     *
+     * GuardBench 쪽 타임아웃을 올렸다면 이 값도 함께 올리세요.
+     * 예산이 짧으면 도구 검색을 덜 돌아 추천 권수가 줄어듭니다.
+     */
+    budgetMs: num('OPENAI_BUDGET_MS', 12000),
+
+    /**
+     * 허용하는 model 값.
+     *
+     * 이 서비스는 Bedrock 모델 **하나**만 씁니다(config.bedrock.modelId).
+     * 그래서 model 을 라우팅에 쓰지 않지만, 그렇다고 무엇이든 받아서 조용히
+     * 무시하면 오설정을 발견할 방법이 없어집니다. GuardBench 는 model 을
+     * 필수로 보내고 실행 조건으로 고정 저장하므로, 틀린 값이 들어오면
+     * 400 으로 알려주는 편이 낫습니다.
+     *
+     * 두 가지를 허용합니다.
+     *   · 'bookbot'                — 안정적인 별칭. Bedrock 모델을 교체해도
+     *                                GuardBench Target 설정을 고치지 않아도 됩니다.
+     *   · config.bedrock.modelId   — 실제 Bedrock 모델 ID 를 그대로 쓰는 경우.
+     *
+     * OPENAI_EXTRA_MODELS 로 별칭을 더 받을 수 있습니다(콤마 구분).
+     */
+    modelAlias: 'bookbot',
+    extraModels: (process.env.OPENAI_EXTRA_MODELS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+
+    /**
+     * 레이트리밋 — 채팅과 **카운터를 분리**합니다(keyPrefix 'RLOAI').
+     *
+     * GuardBench 한 번 실행이 TestCase 수백 건을 보냅니다(공개 예시 253건).
+     * 채팅 한도(분당 10·하루 150)로는 벤치마크가 완주하지 못하고, 반대로
+     * 채팅 한도를 올리면 실사용자 쪽 비용 방어가 함께 풀립니다.
+     *
+     * ⚠️ 이 값은 비용에 직결됩니다. 요청 1건마다 Bedrock 호출이 최소 2회
+     *   (정책 의도 분류 + 답변 생성) 발생합니다. 벤치마크를 돌리지 않는
+     *   기간에는 OPENAI_RATE_LIMIT_PER_DAY=0 으로 사실상 잠글 수 있습니다.
+     */
+    perMinute: num('OPENAI_RATE_LIMIT_PER_MINUTE', 30),
+    perDay: num('OPENAI_RATE_LIMIT_PER_DAY', 600),
+  },
+
   allowedOrigins: (process.env.ALLOWED_ORIGINS || '')
     .split(',')
     .map((s) => s.trim())

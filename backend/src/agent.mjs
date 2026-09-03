@@ -103,7 +103,20 @@ function intentDirective(intent) {
   return '';
 }
 
-export async function runAgent({ userMessage, history = [], secrets = {}, emit, intent = 'BOOK' }) {
+/**
+ * @param {object} params
+ * @param {number} [params.budgetMs] 요청 전체 마감을 덮어씁니다. 생략하면
+ *   `config.limits.requestBudgetMs`(26초)를 씁니다.
+ *
+ *   왜 인자로 뺐는가: GuardBench 의 HTTP Target 어댑터는 요청 타임아웃이
+ *   기본 15초입니다(`HttpEndpointProperties.DEFAULT_REQUEST_TIMEOUT_MS`).
+ *   26초 예산으로 답하면 GuardBench 쪽에서 `PROVIDER_TIMEOUT` 이 되어
+ *   테스트 결과가 "우리 서비스가 응답하지 않았다" 로 기록됩니다.
+ *   환경 변수를 바꾸면 실서비스 채팅까지 같이 짧아지므로 호출자별로 받습니다.
+ */
+export async function runAgent({
+  userMessage, history = [], secrets = {}, emit, intent = 'BOOK', budgetMs,
+}) {
   /** @type {Array} Bedrock에 넘길 메시지 배열 (toolUse/toolResult 포함) */
   const messages = [...history, { role: 'user', content: [{ text: userMessage }] }];
 
@@ -123,7 +136,12 @@ export async function runAgent({ userMessage, history = [], secrets = {}, emit, 
   const startedAt = Date.now();
 
   // 요청 전체를 감싸는 하나의 마감. 도구·LLM 턴·보충 조회가 전부 이 안에 듭니다.
-  const requestDeadlineAt = startedAt + config.limits.requestBudgetMs;
+  // 호출자가 budgetMs 를 주면 그것을 씁니다(GuardBench 처럼 더 짧은 마감이
+  // 걸린 클라이언트용). 0 이나 음수는 설정 실수로 보고 기본값으로 되돌립니다.
+  const effectiveBudgetMs = Number.isFinite(budgetMs) && budgetMs > 0
+    ? budgetMs
+    : config.limits.requestBudgetMs;
+  const requestDeadlineAt = startedAt + effectiveBudgetMs;
 
   // 도구 라운드 마감 — 답변 생성 몫을 먼저 떼어둡니다.
   // 이 값이 없으면 도구가 예산을 다 쓰고 답변이 잘립니다(카드도 함께 줄어듦).

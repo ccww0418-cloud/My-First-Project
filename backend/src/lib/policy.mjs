@@ -352,3 +352,38 @@ export async function evaluatePolicy(input, opts = {}) {
   const llm = await classifyIntent(input);
   return { ...llm, ms: Date.now() - t0 };
 }
+
+/**
+ * 차단 사유별 안내 문구.
+ *
+ * 사유를 구분해서 알려주는 이유: "처리할 수 없습니다" 한 줄로 끝내면
+ * 사용자는 무엇을 고쳐야 할지 모릅니다. 특히 과길이·빈 입력은
+ * 사용자가 바로 고칠 수 있는 문제입니다.
+ *
+ * 왜 index.mjs 가 아니라 여기 있는가:
+ *   소비자가 둘이 되었습니다 — SSE 채팅(index.mjs)과 OpenAI 호환
+ *   엔드포인트(openai.mjs). 각자 문구를 들고 있으면 한쪽만 고쳐서
+ *   같은 차단 사유에 다른 안내가 나갑니다. 차단 코드를 정의하는 이 모듈이
+ *   그 코드의 사용자 문구까지 함께 갖는 편이 갈라지지 않습니다.
+ */
+export function blockReason(code) {
+  switch (code) {
+    case 'empty_input':
+      return '어떤 책을 찾으시는지 알려주세요. 주제나 기분, 작가 이름 아무거나 괜찮습니다.';
+    case 'too_long':
+      return '메시지가 너무 깁니다. 핵심만 짧게 적어주시면 찾아드릴게요.';
+    case 'control_chars':
+    case 'encoded_payload':
+      return '입력을 읽을 수 없습니다. 일반 텍스트로 다시 적어주세요.';
+    case 'pii_krrn':
+    case 'pii_card':
+      return '주민등록번호나 카드번호는 입력하지 마세요. 대화는 기록에 남습니다. '
+        + '그 부분을 지우고 다시 물어봐 주세요.';
+    case 'minor_safety':
+      return '이 요청은 도와드릴 수 없습니다.';
+    case 'prompt_injection':
+      return '저는 책을 추천하는 사서입니다. 찾으시는 책에 대해 알려주세요.';
+    default:
+      return '요청을 처리할 수 없습니다. 어떤 책을 찾으시는지 알려주세요.';
+  }
+}

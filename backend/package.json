@@ -14,6 +14,8 @@
     "test:agent": "node scripts/agent-loop-test.mjs && BUDGET_TEST=1 node scripts/agent-loop-test.mjs && LLM_DEADLINE_TEST=1 node scripts/agent-loop-test.mjs",
     "test:policy": "node scripts/policy-test.mjs",
     "test:features": "node scripts/feature-test.mjs",
+    "test:openai": "node scripts/openai-test.mjs",
+    "serve:local": "node scripts/local-server.mjs",
     "models": "bash scripts/list-models.sh",
     "check:nlk": "node scripts/nlk-check.mjs"
   },
