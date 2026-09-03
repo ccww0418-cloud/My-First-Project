@@ -3,6 +3,9 @@
 이 프로젝트에 실제로 구현된 통제 항목 전체입니다. 각 항목의 **구현 위치**를 함께 적었습니다.
 마지막 절에 **구현하지 않은 것**도 정직하게 정리했습니다.
 
+> 📄 **한 장으로 훑고 싶으면 → [13-security-overview.md](./13-security-overview.md)**
+> 이 문서는 배경과 근거를 담은 상세 문서입니다. 설정값 표만 필요하면 위 문서를 보세요.
+
 ---
 
 ## ⚠️ 먼저 명확히 할 것 — "가드레일"이라는 단어
@@ -39,7 +42,8 @@ LLM 서비스에서 가장 현실적인 위협은 해킹이 아니라 **비용 �
 DynamoDB의 **원자적 카운터**(`UpdateItem` + `ADD`)를 씁니다. 동시 요청에도 카운트가 정확합니다.
 
 ```
-pk = RL#<IP>
+pk = RL#<IP>       ← 채팅          분당 10  / 하루 150
+pk = RLOAI#<IP>    ← OpenAI 호환    분당 30  / 하루 600
 sk = MIN#<분 윈도우 epoch>   → TTL 120초
 sk = DAY#<일 윈도우 epoch>   → TTL 90000초
 ```
@@ -48,6 +52,13 @@ sk = DAY#<일 윈도우 epoch>   → TTL 90000초
 - 클라이언트 IP는 `X-Forwarded-For`의 첫 번째 값 (CloudFront 엣지 IP가 아닌 실제 IP)
 - **fail-open**: DynamoDB 장애 시 요청을 통과시킵니다 (가용성 우선)
 
+**카운터를 두 개로 나눈 이유** (2026-09-03 추가):
+GuardBench 한 번 실행이 TestCase 수백 건을 보냅니다. 채팅 한도(분당 10)로는
+벤치마크가 완주하지 못하고, 반대로 채팅 한도를 올리면 실사용자 쪽 비용 방어가
+함께 풀립니다. 같은 키를 쓰면 한쪽 트래픽이 다른 쪽 할당량을 깎습니다.
+`OPENAI_RATE_LIMIT_PER_MINUTE` / `OPENAI_RATE_LIMIT_PER_DAY` 로 조절하며,
+벤치마크를 돌리지 않는 기간에는 `PER_DAY=0` 으로 사실상 잠글 수 있습니다.
+
 ## 1-2. LLM 호출 자체의 상한
 
 레이트리밋을 통과한 요청 하나가 쓸 수 있는 자원도 제한했습니다.
@@ -55,11 +66,11 @@ sk = DAY#<일 윈도우 epoch>   → TTL 90000초
 | 항목 | 값 | 이유 | 위치 |
 |---|---|---|---|
 | `MAX_TOOL_ITERATIONS` | **4** | 없으면 LLM이 도구를 무한 호출하며 요금을 태웁니다 | `agent.mjs` 도구 루프 |
-| `BEDROCK_MAX_TOKENS` | 2048 | 출력 토큰이 입력보다 5배 비쌉니다 | `config.mjs` |
+| `BEDROCK_MAX_TOKENS` | **3072** | 출력 토큰이 입력보다 5배 비쌉니다. 2048 이던 동안에는 10권 추천이 `stopReason=max_tokens` 로 잘렸고, 잘린 답변은 카드 선별까지 함께 망쳤습니다 | `config.mjs` |
 | 사용자 메시지 길이 | 2000자 | 입력 토큰 상한 | `config.mjs:147` |
 | 대화 히스토리 | 최근 12턴 | 히스토리 비대화 방지 | `config.mjs:148` |
 | 턴당 저장 길이 | 4000자 | 같은 목적 | `sessions.mjs` |
-| 외부 API 타임아웃 | 6초 (Gutendex 4초) | Lambda 실행시간 = 요금 | `http.mjs`, `gutendex.mjs` |
+| 외부 API 타임아웃 | **5초** (Gutendex 4초) | Lambda 실행시간 = 요금 | `http.mjs:15` (`EXTERNAL_API_TIMEOUT_MS`), `gutendex.mjs:52` |
 | 응답 본문 상한 | 3MB | 메모리 보호 | `http.mjs` |
 
 ## 1-3. 캐시로 비용 절감
@@ -102,19 +113,44 @@ Lambda 예약 동시성을 **0**으로 설정하면 즉시 모든 호출이 차�
 
 ## 2-2. Lambda Function URL — IAM 인증
 
+> ⚠️ **이 절은 2026-09-03 에 정정되었습니다.**
+> 전에는 "인증 유형 = `AWS_IAM` (`NONE` 아님)" 이라고 적혀 있었지만
+> 실제 배포는 `AuthType=NONE` + 커스텀 헤더입니다. 아래가 현재 구성입니다.
+
 | 통제 | 설정 |
 |---|---|
-| 인증 유형 | **`AWS_IAM`** (`NONE` 아님) |
+| 인증 유형 | **`NONE`** — 함수 URL 자체는 공개 |
 | 호출 모드 | `RESPONSE_STREAM` |
-| 리소스 정책 | `lambda:InvokeFunctionUrl` / `cloudfront.amazonaws.com` / SourceArn = 특정 배포 |
+| 실질 인증 | **`x-origin-secret` 헤더** (CloudFront 가 오리진으로만 주입) |
+| 비밀 보관 | SSM SecureString `$SSM_PREFIX/ORIGIN_SECRET` |
+| 비교 방식 | 길이 확인 후 상수 시간 XOR (타이밍 공격 방지) |
 
-`infra/01-backend.sh:276`, `infra/03-cloudfront.sh:310`
+`infra/01-backend.sh` (함수 URL 생성), `infra/03-cloudfront.sh` (CustomHeaders 주입),
+`backend/src/index.mjs` `checkOriginSecret()`
 
-Function URL을 브라우저에 직접 넣으면 **403이 나오는 것이 정상**입니다.
-CloudFront가 OAC로 SigV4 서명한 요청만 통과합니다.
+### 왜 IAM 인증을 쓰지 못했나
 
-> ⚠️ Action이 `lambda:InvokeFunction`이 아니라 **`lambda:InvokeFunctionUrl`** 입니다.
-> 이걸 틀리면 403 `Missing Authentication Token`이 납니다.
+원래는 `AuthType=AWS_IAM` + OAC SigV4 로 두려 했습니다. 그런데 AWS 문서에 명시된
+제약이 있습니다.
+
+> If you use PUT or POST methods with your Lambda function URL, your users must
+> compute the SHA256 of the body and include the payload hash value in the
+> `x-amz-content-sha256` header. Lambda doesn't support unsigned payloads.
+
+즉 본문이 있는 POST 는 **브라우저(뷰어)가** 본문 해시를 계산하고 SigV4 서명까지
+해야 합니다. 공개 웹앱에서는 불가능합니다. 본문이 없는 `GET /api/health` 는
+통과하지만 `POST /api/chat` 은 403 이 됩니다.
+
+그래서 함수 URL 인증을 `NONE` 으로 내리고, CloudFront 가 오리진으로 보낼 때만
+붙이는 커스텀 헤더로 인증합니다. 이 헤더는 브라우저에 노출되지 않습니다.
+
+함수 URL 을 직접 호출하면 **403 이 나오는 것이 정상**입니다 —
+단, IAM 서명이 아니라 헤더가 없어서입니다.
+(`infra/doctor.sh` 가 이걸 테스트합니다)
+
+> ⚠️ 한계: `ORIGIN_SECRET` 이 SSM 에 없으면 `checkOriginSecret()` 이
+> `{ok:true, skipped:true}` 로 통과시킵니다(로컬 개발 호환). 값이 사라지면
+> 인증이 조용히 풀립니다.
 
 ## 2-3. 전송 구간 암호화
 
