@@ -293,9 +293,20 @@ export const toolConfig = {
 };
 
 /** 프론트엔드 진행 표시용 라벨 */
+/**
+ * 대기 화면에 보여줄 도구 이름.
+ *
+ * ★ 도구를 추가하면 여기에도 넣어야 합니다. 빠지면 agent.mjs 가
+ *   `TOOL_LABELS[tu.name] ?? tu.name` 으로 폴백해서 사용자에게
+ *   `lookup_books` 같은 영어 식별자가 그대로 보입니다.
+ *   (실제로 lookup_books 가 빠져 있었습니다)
+ */
 export const TOOL_LABELS = {
-  search_books: '4개 도서 DB 통합 검색',
+  // 소스 6곳(Google Books·Open Library·Hardcover·Gutendex·알라딘·국립중앙도서관)을
+  // 언어 맥락에 따라 갈라 부릅니다. 전에 '4개' 로 적혀 있었습니다.
+  search_books: '도서 DB 6곳 통합 검색',
   browse_by_subject: '주제·분위기 기반 탐색',
+  lookup_books: '책 정보 확인',
   find_free_ebooks: '무료 전자책(구텐베르크) 검색',
   get_book_detail: '책 상세 정보 조회',
 };
