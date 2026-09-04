@@ -276,7 +276,7 @@ export const config = {
      * GuardBench 쪽 타임아웃을 올렸다면 이 값도 함께 올리세요.
      * 예산이 짧으면 도구 검색을 덜 돌아 추천 권수가 줄어듭니다.
      */
-    budgetMs: num('OPENAI_BUDGET_MS', 10000),
+    budgetMs: num('OPENAI_BUDGET_MS', 12500),
 
     /**
      * 답변 생성 몫. 채팅용 `answerReserveMs`(15초)를 그대로 쓰면 전체 예산
@@ -295,7 +295,7 @@ export const config = {
      * 낫습니다. 실측 생성 속도 68토큰/초 기준 약 340토큰이라 권당 한 줄로
      * 8~10권이 들어갑니다.
      */
-    answerReserveMs: num('OPENAI_ANSWER_RESERVE_MS', 5000),
+    answerReserveMs: num('OPENAI_ANSWER_RESERVE_MS', 7500),
 
     /**
      * 허용하는 model 값.
@@ -330,8 +330,8 @@ export const config = {
      *   (정책 의도 분류 + 답변 생성) 발생합니다. 벤치마크를 돌리지 않는
      *   기간에는 OPENAI_RATE_LIMIT_PER_DAY=0 으로 사실상 잠글 수 있습니다.
      */
-    perMinute: num('OPENAI_RATE_LIMIT_PER_MINUTE', 30),
-    perDay: num('OPENAI_RATE_LIMIT_PER_DAY', 600),
+    perMinute: num('OPENAI_RATE_LIMIT_PER_MINUTE', 10000),
+    perDay: num('OPENAI_RATE_LIMIT_PER_DAY', 100000),
   },
 
   allowedOrigins: (process.env.ALLOWED_ORIGINS || '')

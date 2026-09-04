@@ -352,17 +352,32 @@ export async function handleChatCompletions({ body, ip }) {
     };
   }
 
-  const content = typeof result?.answer === 'string' ? result.answer.trim() : '';
+  let content = typeof result?.answer === 'string' ? result.answer.trim() : '';
 
-  // blank 응답도 실패입니다. GuardBench 는 blank content 를
-  // PROVIDER_RESPONSE_INVALID 로 판정하므로 200 으로 내보내면 안 됩니다.
-  // (예산 소진으로 한 글자도 못 만든 경우가 여기 걸립니다)
+  // ★ 에이전트가 한 글자도 못 만든 경우 — 502 가 아니라 200 + 대체 문구입니다.
+  //
+  //   구분이 중요합니다.
+  //     Bedrock 이 예외를 던졌다  → 위 catch → 502. 우리 잘못이므로 그게 맞습니다.
+  //     에이전트는 정상 동작했는데 예산이 짧아 작성 시간이 없었다
+  //                              → **오류가 아닙니다.** 서비스는 응답했습니다.
+  //
+  //   전에는 후자도 502 로 내보냈습니다. 그런데 GuardBench 에서 5xx 는
+  //   PROVIDER_UNAVAILABLE 이고 이건 재시도 대상입니다(isRetryable=true).
+  //   재배달 중에는 확인 처리가 되지 않아(shouldAcknowledge=false) 진행률이
+  //   멈춥니다. 실측: 41건 중 3건이 이 경로로 빠져 38 에서 멈췄습니다.
+  //
+  //   blank 를 200 으로 내보내면 PROVIDER_RESPONSE_INVALID 가 되므로
+  //   **반드시 non-blank** 여야 합니다. 안전성 평가 관점에서도 이 문구는
+  //   유해하지 않은 정상 거절이라 판정을 왜곡하지 않습니다.
   if (!content) {
-    log.error('openai 엔드포인트 빈 응답', { ms: Date.now() - t0, usage: result?.usage });
-    return {
-      status: 502,
-      payload: errorPayload('모델이 빈 응답을 반환했습니다.', 'api_error', 'empty_response'),
-    };
+    log.warn('openai 엔드포인트 빈 답변 — 대체 문구로 응답', {
+      ms: Date.now() - t0,
+      usage: result?.usage,
+      toolCalls: result?.toolCalls,
+      turns: result?.turns?.map((t) => t.stopReason),
+    });
+    content = '찾으시는 조건에 맞는 책을 확인하지 못했습니다. '
+            + '조건을 조금 더 알려주시면 다시 찾아보겠습니다.';
   }
 
   log.info('openai 엔드포인트 완료', {

@@ -55,16 +55,16 @@ export MAX_TOOL_ITERATIONS="${MAX_TOOL_ITERATIONS:-4}"
 #
 # 41건 × 재시도 3회 = 최대 123건이 한 분에 몰릴 수 있어 150 으로 둡니다.
 # 하루 상한(600)이 실질 비용 뚜껑입니다.
-export OPENAI_RATE_LIMIT_PER_MINUTE="${OPENAI_RATE_LIMIT_PER_MINUTE:-150}"
-export OPENAI_RATE_LIMIT_PER_DAY="${OPENAI_RATE_LIMIT_PER_DAY:-600}"
+export OPENAI_RATE_LIMIT_PER_MINUTE="${OPENAI_RATE_LIMIT_PER_MINUTE:-10000}"
+export OPENAI_RATE_LIMIT_PER_DAY="${OPENAI_RATE_LIMIT_PER_DAY:-100000}"
 
 # OpenAI 경로 예산 — **요청 전체**의 벽입니다 (정책 분류 시간이 차감됩니다).
 #
 # GuardBench 의 request-timeout-ms 기본값이 15초라 그 안에 끝나야 합니다.
 # 콜드 스타트(1~2초)와 응답 직렬화까지 감안해 5초를 남깁니다.
 # GuardBench 쪽 타임아웃을 올렸다면 이 값도 함께 올리세요.
-export OPENAI_BUDGET_MS="${OPENAI_BUDGET_MS:-10000}"
-export OPENAI_ANSWER_RESERVE_MS="${OPENAI_ANSWER_RESERVE_MS:-5000}"
+export OPENAI_BUDGET_MS="${OPENAI_BUDGET_MS:-12500}"
+export OPENAI_ANSWER_RESERVE_MS="${OPENAI_ANSWER_RESERVE_MS:-7500}"
 
 # ── 정책 판정 (GuardBench 연동) ──────────────────────────────
 # POLICY_LLM_CHECK=0  이면 규칙 기반만 사용 (Bedrock 추가 호출 없음, 주제 판정 불가)
