@@ -57,7 +57,7 @@ frontend/.render/
 *.pdf
 
 # 생성물 (scripts/make-deck.py 로 재생성)
-docs/site-shot.png
+
 
 # 품질 측정 결과 (measure-quality.mjs)
 backend/scripts/.quality/

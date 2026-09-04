@@ -232,8 +232,20 @@ txt(s, In(1.28), In(6.29), In(5.0), In(0.4),
 
 SX, SY, SW_, SH_ = In(6.95), In(1.05), In(5.78), In(5.72)
 if os.path.exists(SHOT):
-    fit_picture(s, SHOT, SX, SY, SW_, SH_)
-else:
+    from PIL import Image as _Im
+    _iw, _ih = _Im.open(SHOT).size
+    _h = Emu(int(SW_ * _ih / _iw))            # 폭에 맞춘 실제 높이
+    fit_picture(s, SHOT, SX, In(1.62), SW_, _h)
+    txt(s, SX, In(1.24), SW_, In(0.3),
+        [[("서비스 첫 화면", {"size": 11, "bold": True, "color": MUTED})]])
+    cap_y = In(1.62) + _h + In(0.26)
+    txt(s, SX, cap_y, SW_, In(1.5),
+        [[("제목 없이 물어도 됩니다", {"size": 12.5, "bold": True})],
+         [("기분 · 상황 · 좋아했던 작가를 말하면 서점과 도서관을 조회해",
+           {"size": 10.5, "color": MUTED})],
+         [("실제로 존재하는 책만 골라 돌려줍니다.", {"size": 10.5, "color": MUTED})]],
+        space=4)
+elif False:
     box(s, SX, SY, SW_, SH_, fill=RGBColor(0xF4, 0xF1, 0xE8), edge=LINE)
     txt(s, SX + In(0.5), SY + In(2.3), SW_ - In(1.0), In(1.3),
         [[("사이트 화면 캡처 자리", {"size": 13, "bold": True, "color": MUTED})],
