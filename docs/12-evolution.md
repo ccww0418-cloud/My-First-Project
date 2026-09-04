@@ -463,7 +463,8 @@ aws logs tail /aws/lambda/bookbot-api --region <REGION> --since 10m \
 | `npm run test:saved` (frontend) | 30 | 없음 |
 | `npm run check:render` | 54 | 없음 |
 
-합계 **약 420건**. `smoke` 만 외부 서버 상태에 따라 흔들립니다 — Open Library
+합계 **474건** (2026-09-04 재측정: 정책 99 · 기능 218 · OpenAI 50 · 에이전트 23 ·
+프론트 84). `smoke` 만 외부 서버 상태에 따라 흔들립니다 — Open Library
 `/search.json` 이 5초 타임아웃에 걸리는 날이 있습니다(같은 실행에서
 `/subjects/` 는 700ms 에 통과하므로 서비스 장애가 아니라 엔드포인트 지연입니다).
 

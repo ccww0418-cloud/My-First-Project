@@ -715,7 +715,7 @@ aws cloudfront create-invalidation --distribution-id <배포ID> --paths "/*"
 | 알라딘 | 0권 | 키 없음 |
 | Open Library | 0권 | 한국어 복합 질의를 못 찾음 |
 
-5개 소스 전부 0권이면 LLM 이 검색어를 바꿔 재시도하고, 그 과정에서 주제를 벗어납니다.
+6개 소스 전부 0권이면 LLM 이 검색어를 바꿔 재시도하고, 그 과정에서 주제를 벗어납니다.
 
 ```bash
 # 어떤 소스가 살아 있는지 한 줄로
