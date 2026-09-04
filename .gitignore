@@ -55,3 +55,7 @@ frontend/.render/
 #   2) 합계 6MB 가 넘어 저장소만 무거워집니다.
 # 공유가 필요하면 개별적으로 전달하세요.
 *.pdf
+
+# 생성물 (scripts/make-deck.py 로 재생성)
+BookBot-발표자료.pptx
+docs/site-shot.png
