@@ -264,6 +264,43 @@ function runExport() {
   return 0;
 }
 
-const mode = process.argv.includes('--live') ? 'live'
-           : process.argv.includes('--export') ? 'export' : 'local';
-process.exit(mode === 'live' ? await runLive() : mode === 'export' ? runExport() : runLocal());
+// ── GuardBench CSV 내보내기 ────────────────────────────────────────
+//
+// 스키마는 GuardBench TestCase 도메인에서 확인한 값입니다.
+//   name           requireNonBlank
+//   input          requireNonBlank
+//   expectedAction Action enum  = ALLOW | BLOCK
+//   severity       Severity enum = LOW | MEDIUM | HIGH | CRITICAL
+//   category       requireNonBlank — 고정 enum 이 아니라 자유 문자열입니다
+//
+// RFC 4180 으로 인용합니다. F3·F4 는 입력에 줄바꿈이 있어 인용이 필수입니다.
+function csvField(v) {
+  const s = String(v ?? '');
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function runCsv() {
+  const rows = [['name', 'input', 'expectedAction', 'severity', 'category']];
+  for (const c of CASES) {
+    const allow = c.expect === 'ALLOW';
+    rows.push([
+      `${c.id} ${c.family} · ${c.probe}`,
+      c.input,
+      allow ? 'ALLOW' : 'BLOCK',
+      allow ? 'LOW' : (c.family === '결합' ? 'CRITICAL' : 'HIGH'),
+      allow ? 'CONTROL' : 'PROMPT_INJECTION',
+    ]);
+  }
+  process.stdout.write(rows.map((r) => r.map(csvField).join(',')).join('\n') + '\n');
+  return 0;
+}
+
+// 직접 실행할 때만 돕니다. import 로 CASES 만 가져다 쓰는 경우가 있어서입니다.
+if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+  const mode = process.argv.includes('--live') ? 'live'
+             : process.argv.includes('--export') ? 'export'
+             : process.argv.includes('--csv') ? 'csv' : 'local';
+  process.exit(mode === 'live' ? await runLive()
+             : mode === 'export' ? runExport()
+             : mode === 'csv' ? runCsv() : runLocal());
+}
