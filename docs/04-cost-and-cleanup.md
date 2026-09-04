@@ -389,7 +389,7 @@ echo "위 결과가 모두 비어 있으면 정리 완료"
 | 실수 | 결과 | 예방 |
 |---|---|---|
 | Lambda 예약 동시성을 안 설정 | 트래픽 급증 시 Bedrock 호출 폭증 | STEP 6-G |
-| 함수 URL 인증을 `NONE`으로 두고 방치 | 누구나 직접 호출 → 레이트리밋만으로 방어 | STEP 7에서 `AWS_IAM` |
+| `ORIGIN_SECRET`을 SSM에서 지움 | 함수 URL 검증이 **조용히 통과** → 누구나 직접 호출 | 값을 지우지 않기. STEP 10-D |
 | `MAX_TOOL_ITERATIONS`를 크게 설정 | 요청당 비용이 배수로 증가 | 4 이하 유지 |
 | OpenSearch Serverless로 RAG 구축 | **최소 용량 때문에 월 $100+** | S3 Vectors 또는 pgvector 사용 |
 | NAT Gateway를 써서 Lambda에 고정 IP | 시간당 $0.059 → 2주 $20 | 이 프로젝트는 VPC 불필요 |

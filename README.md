@@ -55,20 +55,26 @@ bash infra/verify.sh                           # 검증
 
 | 순서 | 문서 | 내용 |
 |---|---|---|
+전체 지도는 **[docs/README.md](./docs/README.md)** 에 있습니다.
+
+| 순서 | 문서 | 내용 |
+|---|---|---|
+| 0 | **[docs/10-cheatsheet.md](./docs/10-cheatsheet.md)** | 로직 1페이지 + AWS 1페이지. 여기서 시작 |
 | 1 | **[docs/01-architecture.md](./docs/01-architecture.md)** | 아키텍처와 설계 근거. 왜 이 조합인지 |
-| 2 | **[docs/03-external-apis.md](./docs/03-external-apis.md)** | 도서 API 5종 키 발급 + 연동 전략 |
+| 2 | **[docs/03-external-apis.md](./docs/03-external-apis.md)** | 도서 API 6곳 키 발급 + 연동 전략 |
 | 3 | **[docs/02-aws-console-setup.md](./docs/02-aws-console-setup.md)** | AWS 콘솔 단계별 설정 (STEP 0~14) |
 | 3' | **[infra/README.md](./infra/README.md)** | CLI 자동 배포 스크립트 |
 | 4 | **[docs/04-cost-and-cleanup.md](./docs/04-cost-and-cleanup.md)** | 비용 추정 + 2주 후 삭제 순서 |
-| 5 | **[docs/05-runbook.md](./docs/05-runbook.md)** | 재배포, 트러블슈팅, 모니터링, 답변 평가 조회 |
+| 5 | **[docs/05-runbook.md](./docs/05-runbook.md)** | 배포·재배포, 트러블슈팅, 모니터링, 답변 평가 조회 |
 
 ### 전체를 파악하려면
 
 | 문서 | 누가 읽으면 좋은가 |
 |---|---|
-| **[docs/10-summary.md](./docs/10-summary.md)** | 처음 보는 사람. 규모·기능·흐름·비용을 한눈에 |
-| **[docs/11-service-and-aws.md](./docs/11-service-and-aws.md)** | 서비스 기능과 AWS 활용, 이 서비스의 특징 (발표용) |
-| **[docs/09-work-log.md](./docs/09-work-log.md)** | 유지보수 담당. 만든 것 전부와 설계 판단 근거 |
+| **[docs/09-summary.md](./docs/09-summary.md)** | 처음 보는 사람. 기능·AWS 설정값·품질 개선을 한자리에 |
+| **[docs/06-security.md](./docs/06-security.md)** | 보안 통제 목록과 그 값을 고른 근거 |
+| **[docs/08-history.md](./docs/08-history.md)** | 유지보수 담당. 판단이 뒤집힌 기록과 배운 것 |
+| **[docs/07-guardbench.md](./docs/07-guardbench.md)** | 외부 벤치마크 연동 계약 |
 
 > 💡 **예산 알림을 가장 먼저 설정하세요.** CLI 배포는 `04-guardrails.sh`가 자동으로 만듭니다.
 
@@ -145,7 +151,7 @@ npm run build
 ```
 0827/
 ├── README.md                    ← 이 파일
-├── docs/                        ← 가이드 11종
+├── docs/                        ← 가이드 10편 + 지도
 ├── backend/
 │   ├── src/
 │   │   ├── index.mjs            Lambda 엔트리 (스트리밍 + 버퍼 양쪽 지원)

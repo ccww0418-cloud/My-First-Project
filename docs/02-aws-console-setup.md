@@ -522,7 +522,7 @@ npm run smoke
 |---|---|---|
 | `BEDROCK_REGION` | `ap-northeast-2` | |
 | `BEDROCK_MODEL_ID` | **STEP 2-B에서 복사한 값** | 예: `apac.anthropic.claude-sonnet-4-5-20250929-v1:0` |
-| `BEDROCK_MAX_TOKENS` | `2048` | |
+| `BEDROCK_MAX_TOKENS` | `3072` | |
 | `BEDROCK_TEMPERATURE` | `0.4` | 낮을수록 일관됨. 추천 서비스에 적합 |
 | `TABLE_NAME` | `bookbot` | |
 | `SSM_PREFIX` | `/bookbot/prod` | |
@@ -724,18 +724,35 @@ aws bedrock list-inference-profiles --region us-east-1 --type-equals SYSTEM_DEFI
 
 | 항목 | 값 | 이유 |
 |---|---|---|
-| 인증 유형 (Auth type) | **AWS_IAM** | **NONE으로 두면 URL을 아는 누구나 직접 호출 가능 = 비용 폭탄.** CloudFront OAC를 쓰려면 AWS_IAM이 필수입니다 |
+| 인증 유형 (Auth type) | **NONE** | AWS_IAM 을 쓰려 했으나 막혔습니다 (아래 설명) |
 | 호출 모드 (Invoke mode) | **RESPONSE_STREAM** | 스트리밍의 핵심. `추가 설정`을 펼쳐야 보일 수 있습니다 |
 | CORS 구성 | **끄기** (체크 해제) | CloudFront 단일 오리진이라 same-origin. Lambda의 CORS 설정과 앱 코드의 CORS 헤더가 충돌할 수 있어 끕니다 |
 
 2. **저장**
-3. 생성된 **함수 URL**을 복사해 메모 (예: `https://abcd1234....lambda-url.ap-northeast-2.on.aws/`)
+3. 생성된 **함수 URL**을 복사해 메모 (예: `https://abcd1234....lambda-url.us-east-1.on.aws/`)
 
-> ⚠️ 이 URL을 브라우저에 그대로 붙여넣으면 **403 Forbidden**이 정상입니다.
-> AWS_IAM 인증이라 SigV4 서명 없이는 못 부릅니다. STEP 10에서 CloudFront가 서명해줍니다.
+> ### ⚠️ 왜 `AWS_IAM` 이 아닌가
+>
+> 처음에는 `AuthType=AWS_IAM` + CloudFront OAC SigV4 로 두려 했습니다. AWS 제약에
+> 막혔습니다 — **본문이 있는 POST 는 호출자가 본문의 SHA-256 을 계산해
+> `x-amz-content-sha256` 헤더로 보내고 SigV4 서명까지 해야 합니다.** Lambda 는
+> unsigned payload 를 지원하지 않습니다. 즉 **브라우저가** 그 계산을 해야 하는데
+> 공개 웹앱에서는 불가능합니다. 본문 없는 `GET /api/health` 는 통과하고
+> `POST /api/chat` 만 403 이 나서 발견이 늦었습니다.
+>
+> 그래서 `AuthType=NONE` 으로 두고 **CloudFront 가 오리진으로 갈 때만 주입하는
+> 커스텀 헤더**(`x-origin-secret`)로 실질 인증을 합니다. 이 헤더는 브라우저에
+> 노출되지 않습니다. 값은 SSM SecureString 에 두고 앱이 상수 시간 비교로 검증합니다
+> (STEP 10 에서 CloudFront 쪽 설정을 합니다).
+>
+> `NONE` 이라고 무인증이 아닙니다. 헤더 없이 함수 URL 을 직접 부르면 **403** 입니다.
+> 다만 `ORIGIN_SECRET` 이 SSM 에서 사라지면 검증이 **조용히 통과**하도록
+> 되어 있으니(로컬 개발 호환) 그 값을 지우지 마세요.
 
 ### ✅ 체크포인트
-함수 URL이 생성되고, 호출 모드가 **RESPONSE_STREAM**, 인증 유형이 **AWS_IAM**.
+함수 URL이 생성되고, 호출 모드가 **RESPONSE_STREAM**, 인증 유형이 **NONE**.
+브라우저로 열면 `{"error":"forbidden"}` 계열 403 이 나옵니다 (아직 STEP 10 전이라
+헤더를 줄 수 있는 경로가 없습니다).
 
 ---
 
@@ -933,8 +950,12 @@ aws lambda add-permission \
   --action lambda:InvokeFunctionUrl \
   --principal cloudfront.amazonaws.com \
   --source-arn "arn:aws:cloudfront::<계정ID>:distribution/<배포ID>" \
-  --function-url-auth-type AWS_IAM
+  --function-url-auth-type NONE
 ```
+
+> `--function-url-auth-type` 은 STEP 7 에서 만든 함수 URL 의 인증 유형과 **같아야**
+> 합니다. `NONE` 으로 만들었으므로 여기도 `NONE` 입니다. 실질 인증은
+> `x-origin-secret` 헤더가 담당합니다 (10-D 에서 설정).
 
 적용 확인:
 ```bash
@@ -1009,8 +1030,11 @@ CloudFront는 응답 본문을 통째로 버퍼링하지 않고 흘려보내도�
 3. Lambda 함수 URL의 **호출 모드 = RESPONSE_STREAM** (STEP 7)
 4. 함수 URL을 직접 테스트해서 Lambda 자체는 스트리밍하는지 분리 확인:
    ```bash
-   # 임시로 인증 유형을 NONE으로 바꾸고 테스트한 뒤 반드시 AWS_IAM으로 되돌리세요
-   curl -N -X POST '<함수URL>chat' -H 'Content-Type: application/json' \
+   # 오리진 비밀 헤더를 직접 실어 보냅니다 (헤더가 없으면 403)
+   curl -N -X POST '<함수URL>api/chat' \
+     -H 'Content-Type: application/json' \
+     -H "x-origin-secret: $(aws ssm get-parameter --name /bookbot/prod/ORIGIN_SECRET \
+          --with-decryption --query Parameter.Value --output text)" \
      -d '{"message":"테스트"}'
    ```
    여기서는 흘러나오는데 CloudFront 경유로는 안 흐른다면 CloudFront 설정 문제입니다.
@@ -1100,7 +1124,7 @@ npm run build      # → dist/ 생성
 
 ### ✅ 체크포인트
 브라우저로 `https://<배포도메인>` 접속 → 챗봇 화면이 뜨고, 예시 질문을 클릭하면
-"4개 도서 DB 통합 검색" 진행 표시 → 책 카드 → 답변 텍스트가 순서대로 나옵니다.
+"도서 DB 6곳 통합 검색" 진행 표시 → 책 카드 → 답변 텍스트가 순서대로 나옵니다.
 
 브라우저 개발자 도구 **네트워크** 탭에서 `chat` 요청의 유형이 `eventsource`/`fetch`이고
 응답이 점진적으로 늘어나면 스트리밍이 제대로 동작하는 것입니다.
@@ -1360,7 +1384,7 @@ done
 | S3 직접 접근 차단 | `https://bookbot-web-....s3.ap-northeast-2.amazonaws.com/index.html` → **AccessDenied** |
 | Lambda URL 직접 접근 차단 | 함수 URL을 브라우저에 입력 → **403 Forbidden** |
 | 스트리밍 | 답변이 한 번에 안 나오고 점진적으로 나옴 |
-| 도구 호출 | 진행 표시에 "4개 도서 DB 통합 검색" 등이 뜸 |
+| 도구 호출 | 진행 표시에 "도서 DB 6곳 통합 검색" 등이 뜸 |
 | 책 카드 | 표지·평점·무드 태그가 보임 |
 | 무료 전자책 | "무료 고전 추천" 요청 시 다운로드 버튼이 있는 카드 |
 | 세션 기억 | 후속 질문에서 이전 추천을 참조 |

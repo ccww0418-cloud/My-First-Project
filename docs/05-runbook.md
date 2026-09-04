@@ -201,12 +201,15 @@ cd backend && bash scripts/list-models.sh
 3. 함수 URL **호출 모드 = RESPONSE_STREAM** 확인
 4. Lambda 자체를 분리 테스트:
    ```bash
-   # 함수 URL 인증을 임시로 NONE으로 바꾸고
-   curl -N -X POST '<함수URL>chat' -H 'Content-Type: application/json' \
+   # 함수 URL 은 AuthType=NONE 이지만 오리진 비밀 헤더가 필요합니다
+   curl -N -X POST '<함수URL>api/chat' \
+     -H 'Content-Type: application/json' \
+     -H "x-origin-secret: $(aws ssm get-parameter --name /bookbot/prod/ORIGIN_SECRET \
+          --with-decryption --query Parameter.Value --output text)" \
      -d '{"message":"테스트"}'
-   # 끝나면 반드시 AWS_IAM으로 되돌리기
    ```
    여기서는 흘러나오면 CloudFront 문제, 여기서도 안 흐르면 Lambda 문제입니다.
+   헤더를 빼고 호출하면 **403 이 나오는 것이 정상**입니다.
 
 **그래도 안 되면 스트리밍을 포기하는 게 낫습니다.**
 `src/index.bufferedHandler`로 핸들러를 바꾸고 호출 모드를 `BUFFERED`로 하면
@@ -356,13 +359,16 @@ VITE_DEV_PROXY_TARGET=https://abcd1234.lambda-url.ap-northeast-2.on.aws
 ```
 
 ```bash
-# Lambda 함수 URL 인증 유형을 임시로 NONE으로 변경한 뒤
 npm run dev      # http://localhost:5173
-# 개발이 끝나면 반드시 AWS_IAM으로 되돌리기
 ```
 
-> ⚠️ 인증을 `NONE`으로 열어둔 채 잊으면 **누구나 API를 호출할 수 있습니다.**
-> 개발 중에는 `RATE_LIMIT_PER_DAY`를 낮게 두고, 끝나면 즉시 `AWS_IAM`으로 되돌리세요.
+프록시 대상은 **CloudFront 도메인**을 쓰세요. 함수 URL 을 직접 가리키면
+`x-origin-secret` 헤더가 없어 403 입니다. CloudFront 는 그 헤더를 오리진으로
+갈 때 주입해 줍니다.
+
+> ⚠️ `ORIGIN_SECRET` 을 SSM 에서 지우면 `checkOriginSecret()` 이 검증을
+> **조용히 건너뜁니다**(로컬 개발 호환). 개발 편의로 지웠다면 반드시 되돌리세요 —
+> 값이 없는 동안에는 누구나 함수 URL 을 직접 호출할 수 있습니다.
 
 ## 5-4. Node.js 설치 (macOS)
 
@@ -516,7 +522,7 @@ aws dynamodb query --table-name bookbot --region us-east-1 \
 | 주제가 엉뚱함 | "한국 스릴러" 에 한국사·여행서가 나옴 | 장르 사전에 그 장르가 있는지 확인 ([9-3절](#9-3-주제가-엉뚱할-때)) |
 | 무드 추천이 엉뚱함 | "위로되는 책"에 무거운 책 | `HARDCOVER_TOKEN` 확인. **비어 있으면 무드·평점·내용주의가 전부 없습니다** |
 | 말투·형식 문제 | 목록만 나열, 이유 설명 없음 | `backend/src/prompt.mjs` 수정 → 프롬프트만 재배포 (1-3절) |
-| 과도한 차단 | 정상 질문이 거부됨 | `docs/08-guardbench.md` 로 오탐 확인 후 정책 조정 |
+| 과도한 차단 | 정상 질문이 거부됨 | `docs/07-guardbench.md` 로 오탐 확인 후 정책 조정 |
 
 ## 7-6. 평가가 저장되지 않을 때
 
@@ -595,19 +601,20 @@ cd backend
 export PATH="/opt/homebrew/opt/node@22/bin:$PATH"    # 로컬 환경에 맞게
 export AWS_REGION=us-east-1
 
-npm run check          # 문법 — 전 파일 import 검사
-npm run test:policy    # 정책·의도분류 98건
-npm run test:agent     # 에이전트 루프 18건
-npm run test:features  # 평가·알라딘·국중·장르·정확조회·라우팅·카드선별·보충조회 183건
-npm run smoke          # 외부 API 실호출 14건 (네트워크 필요)
+npm run check          # 26파일 파싱+로드 + 프롬프트 5절 확인
+npm run test:policy    # 정책·의도분류 99건
+npm run test:agent     # 에이전트 루프 23건 (3모드)
+npm run test:features  # 평가·알라딘·국중·장르·정확조회·라우팅·카드선별·보충조회 218건
+npm run test:openai    # OpenAI 호환 경로 50건
+npm run smoke          # 외부 API 실호출 13~14건 (네트워크 필요)
 
 cd ../frontend
 npm run test:saved     # 읽을 목록 저장소 30건
-npm run check:render   # 화면 렌더 검수 22건 (브라우저 없이)
+npm run check:render   # 화면 렌더 검수 54건 (브라우저 없이)
 npm run build          # 프론트 빌드
 ```
 
-전부 통과하면 **360건**입니다. 하나라도 실패하면 배포하지 마세요.
+전부 통과하면 **474건**입니다. 하나라도 실패하면 배포하지 마세요.
 
 | 스크립트 | 무엇을 지키는가 |
 |---|---|
@@ -616,7 +623,8 @@ npm run build          # 프론트 빌드
 | `test:features` | **`logRef` 위조로 남의 기록을 훼손할 수 없음**, 평가가 질문·답변을 덮어쓰지 않음, 알라딘 저자 정제, **장르 요청에 엉뚱한 주제가 섞이지 않음** |
 | `test:saved` | 다국어 제목 중복 판정, 상한에서 기존 데이터 보존, 시크릿 모드 폴백 |
 | `check:render` | 평가 버튼이 **답변 완료 후에만** 보임, 오류·차단 턴에는 안 보임, 축소 저장된 책도 카드가 깨지지 않음 |
-| `smoke` | 외부 API 5종 연결과 ISBN 병합 |
+| `test:openai` | GuardBench 가 호출하는 OpenAI 호환 계약(`choices[0].message.content` non-blank, 4xx/5xx 구분) |
+| `smoke` | 외부 API 6곳 연결과 ISBN 병합 |
 
 > `smoke` 는 외부 API를 실제로 호출하므로 **상대 서버 상태에 따라 실패할 수 있습니다.**
 > 4회 중 1회 정도 Open Library·Gutendex 응답이 늦어 실패로 찍혔습니다.
@@ -840,6 +848,23 @@ CloudShell 홈은 120일 미사용 시 삭제되는데, 그때도 사용자가 �
 
 > SSM 값은 인자가 아니라 **환경변수로** python 에 넘깁니다.
 > 인자로 넘기면 키가 프로세스 목록(`ps`)에 노출됩니다.
+
+### 놓치기 쉬운 두 가지
+
+**1. SNS 구독 확인 메일을 클릭해야 알람이 옵니다.**
+`ALERT_EMAIL` 을 넣으면 AWS 가 확인 메일을 보냅니다. **Confirm subscription** 링크를
+누르지 않으면 알람 4개가 전부 설정돼 있어도 메일이 오지 않습니다. 배포 로그에는
+성공으로 찍히므로 조용히 빠지는 항목입니다.
+
+**2. `BEDROCK_MODEL_ID` 에 `us.` 접두사를 붙이세요.**
+접두사가 없는 In-Region 추론은 온디맨드 쿼터가 가장 낮아 시연 중
+`ThrottlingException` 이 날 수 있습니다. `us.` 를 붙이면 Geo 추론 프로필이 되어
+쿼터가 넉넉해집니다.
+
+```
+us.anthropic.claude-sonnet-4-6     ← 권장
+anthropic.claude-sonnet-4-6        ← 동작하지만 쿼터가 낮음
+```
 
 ### 키를 바꾸거나 추가할 때
 
