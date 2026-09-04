@@ -596,6 +596,13 @@ async function handleChat({ message, sessionId, ip, emit }) {
     toolCalls: result.toolCalls,
     bookCount: result.books.length,
     totalMs: Date.now() - t0,
+    // ★ 시간 배분. 어디를 줄여야 하는지 응답만 보고 알 수 있게 실어 보냅니다.
+    //   CloudWatch 조회 권한이 없는 환경에서도 병목을 특정할 수 있어야 합니다.
+    //   policyMs = 의도 분류 Bedrock 호출, turns = 에이전트 턴별 소요.
+    timing: {
+      policyMs: policy.ms ?? null,
+      turns: result.turns ?? [],
+    },
     // 이 답변에 평가를 붙일 위치. 기록 저장이 실패했으면 null 이고,
     // 그 경우 프론트는 평가 버튼을 표시하지 않습니다.
     logRef,

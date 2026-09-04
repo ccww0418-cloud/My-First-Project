@@ -179,10 +179,28 @@ export async function runAgent({
   const reserveBound = Math.max(startedAt + 3000, requestDeadlineAt - effectiveReserveMs);
   const toolDeadlineAt = Math.min(startedAt + config.limits.agentBudgetMs, reserveBound);
 
+  /**
+   * 턴별 타이밍. 어디서 시간이 가는지 응답으로 확인하기 위한 것입니다.
+   *
+   * 왜 필요한가: 실측에서 전체 27초 중 도구가 1.2초였습니다. 남은 26초가
+   * Bedrock 인데, 그게 **토큰 처리** 때문인지 **왕복 횟수** 때문인지에 따라
+   * 최적화 대상이 완전히 달라집니다(프롬프트 캐싱 vs 턴 줄이기).
+   * CloudWatch 조회 권한이 없는 환경이라 로그로는 확인이 안 됩니다.
+   */
+  const turns = [];
+
   const accumulate = (turn) => {
     usage.inputTokens += turn.usage.inputTokens;
     usage.outputTokens += turn.usage.outputTokens;
     usage.totalTokens += turn.usage.totalTokens;
+    turns.push({
+      firstTokenMs: turn.firstTokenMs ?? null,
+      totalMs: turn.totalMs ?? null,
+      stopReason: turn.stopReason ?? null,
+      inputTokens: turn.usage.inputTokens,
+      outputTokens: turn.usage.outputTokens,
+      tools: (turn.toolUses ?? []).map((t) => t.name),
+    });
     if (turn.text) finalText += turn.text;
     // 어시스턴트가 만든 블록(텍스트 + toolUse)을 히스토리에 그대로 추가해야
     // 다음 턴에서 toolResult와 짝이 맞습니다.
@@ -341,6 +359,8 @@ export async function runAgent({
     },
     usage,
     toolCalls,
+    // 턴별 Bedrock 소요 시간. 최적화 대상을 추측으로 고르지 않기 위한 것입니다.
+    turns,
   };
 }
 
@@ -677,7 +697,10 @@ async function streamOneTurn({
     ...usage,
   });
 
-  return { text, assistantContent, toolUses, stopReason, usage };
+  // 타이밍을 함께 돌려줍니다. CloudWatch 로만 남기면 로그 조회 권한이 없는
+  // 환경에서 "어디서 시간이 가는가" 를 알 수 없습니다 — 실제로 이 프로젝트가
+  // 그 상태였고, 최적화 대상을 추측으로 고를 뻔했습니다.
+  return { text, assistantContent, toolUses, stopReason, usage, firstTokenMs, totalMs: Date.now() - t0 };
 }
 
 /**
