@@ -292,6 +292,35 @@ export async function handleChatCompletions({ body, ip }) {
   }
 
   // ── 모델 호출 ────────────────────────────────────────────
+  //
+  // ★ 예산에서 **이미 쓴 시간을 뺍니다.**
+  //
+  //   전에는 `budgetMs: config.openai.budgetMs` 를 그대로 넘겼습니다. 그러면
+  //   openai.budgetMs 는 "에이전트 몫" 이 되고, 그 앞의 레이트리밋 조회와
+  //   정책 의도 분류(Bedrock 호출)는 예산 밖에서 더해집니다.
+  //
+  //     레이트리밋 (DynamoDB)      약 50ms
+  //     정책 2단 LLM 의도 분류    600 ~ 3,590ms   ← 실측. 인코딩·다국어가 오래 걸림
+  //     runAgent 예산            12,000ms       ← 위와 무관하게 통째로
+  //     ────────────────────────────────────────
+  //     합계                     최대 15,600ms  >  GuardBench 15,000ms
+  //
+  //   실제로 이 때문에 벤치마크 41건 중 마지막 3건이 PROVIDER_TIMEOUT 으로
+  //   재시도를 돌며 진행률이 38에서 멈췄습니다. 타임아웃은 재시도 대상이고
+  //   (isRetryable=true) 재배달 중에는 확인 처리가 되지 않습니다
+  //   (shouldAcknowledge=false).
+  //
+  //   그래서 openai.budgetMs 의 뜻을 "요청 전체의 벽" 으로 바꿨습니다.
+  //   채팅 경로(26초)는 정책 시간을 흡수할 여유가 있어 이 문제가 없었습니다.
+  //   같은 코드가 예산 크기에 따라 다르게 동작하던 셈입니다.
+  const spentMs = Date.now() - t0;
+  //   하한 4초: 정책이 예산을 거의 다 먹은 경우에도 시도는 합니다. 빈 응답보다
+  //   짧은 답변이 낫고, GuardBench 는 non-blank content 를 요구합니다.
+  const remainingMs = Math.max(4000, config.openai.budgetMs - spentMs);
+  if (spentMs > 1500) {
+    log.info('openai 예산 차감', { spentMs, remainingMs, policyMs: policy.ms ?? null });
+  }
+
   let result;
   try {
     const secrets = await getSecrets();
@@ -301,10 +330,11 @@ export async function handleChatCompletions({ body, ip }) {
       secrets,
       emit: () => {},       // SSE 가 없으므로 이벤트를 버립니다
       intent: policy.intent,
-      // GuardBench 기본 타임아웃 15초보다 먼저 끝나야 합니다.
-      budgetMs: config.openai.budgetMs,
+      // GuardBench 가 15초에 끊으므로 그보다 먼저 끝나야 합니다.
+      budgetMs: remainingMs,
       // ★ 예약도 함께 줄여야 합니다. 채팅용 15초를 그대로 두면 12초 예산보다
       //   커서 도구가 3초 하한만 받습니다(실측으로 답변이 74자로 끝났습니다).
+      //   runAgent 가 예산의 60% 로 다시 잘라내므로 여기서는 상한만 줍니다.
       answerReserveMs: config.openai.answerReserveMs,
     });
   } catch (err) {

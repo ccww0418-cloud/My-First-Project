@@ -253,17 +253,30 @@ export const config = {
    */
   openai: {
     /**
-     * 이 엔드포인트에만 적용하는 요청 예산.
+     * 이 엔드포인트의 **요청 전체** 예산.
      *
-     * 12초인 이유: GuardBench 의 `guardbench.http-endpoint.request-timeout-ms`
-     * 기본값이 **15초**입니다(`HttpEndpointProperties.DEFAULT_REQUEST_TIMEOUT_MS`).
-     * 채팅 기본 예산 26초로 답하면 GuardBench 가 먼저 끊고 `PROVIDER_TIMEOUT`
-     * 으로 기록합니다. 응답 직렬화·전송 여유로 3초를 남깁니다.
+     * ★ "에이전트 몫" 이 아니라 요청 전체의 벽입니다. `openai.mjs` 가
+     *   `budgetMs - (지금까지 쓴 시간)` 을 runAgent 에 넘깁니다.
+     *
+     * 왜 전체로 바꿨나 (2026-09-04 실측):
+     *   전에는 이 값을 runAgent 에 그대로 넘겨서, 앞단 시간이 예산 밖에
+     *   더해졌습니다.
+     *     레이트리밋(DynamoDB)     약 50ms
+     *     정책 2단 LLM 의도 분류   600 ~ 3,590ms   ← 인코딩·다국어가 오래 걸림
+     *     runAgent 예산           12,000ms
+     *     ─────────────────────────────────
+     *     합계                    최대 15,600ms  >  GuardBench 15,000ms
+     *   벤치마크 41건 중 마지막 3건이 PROVIDER_TIMEOUT 으로 재시도를 돌며
+     *   진행률이 38 에서 멈췄습니다.
+     *
+     * 10초인 이유: GuardBench 의 `request-timeout-ms` 기본값이 **15초**입니다
+     * (`HttpEndpointProperties.DEFAULT_REQUEST_TIMEOUT_MS`). 응답 직렬화와
+     * **콜드 스타트**(t0 밖에서 1~2초)까지 감안해 5초를 남깁니다.
      *
      * GuardBench 쪽 타임아웃을 올렸다면 이 값도 함께 올리세요.
      * 예산이 짧으면 도구 검색을 덜 돌아 추천 권수가 줄어듭니다.
      */
-    budgetMs: num('OPENAI_BUDGET_MS', 12000),
+    budgetMs: num('OPENAI_BUDGET_MS', 10000),
 
     /**
      * 답변 생성 몫. 채팅용 `answerReserveMs`(15초)를 그대로 쓰면 전체 예산
@@ -273,10 +286,16 @@ export const config = {
      *   예약 15초를 그대로 뒀더니 도구가 3초만 받아 검색이 거의 못 돌고
      *   "Recommend thrillers similar to Gone Girl" 답변이 74자로 끝났습니다.
      *
-     * 7초면 도구 5초 / 답변 7초로 갈립니다. 실측 생성 속도 68토큰/초 기준
-     * 약 470토큰이라 권당 한 줄로 10권이 들어갑니다.
+     * runAgent 가 예산의 **60% 로 다시 자릅니다**. 예산이 요청마다 달라지므로
+     * (앞단 시간을 뺀 값) 여기 값은 상한 역할만 합니다.
+     *   예산 10초 → 예약 6초 / 도구 4초
+     *   예산  7초 → 예약 4.2초 / 도구 2.8초  (정책이 3초를 먹은 경우)
+     *
+     * 5초로 둔 이유: 60% 상한에 걸려 조용히 깎이는 것보다 명시하는 편이
+     * 낫습니다. 실측 생성 속도 68토큰/초 기준 약 340토큰이라 권당 한 줄로
+     * 8~10권이 들어갑니다.
      */
-    answerReserveMs: num('OPENAI_ANSWER_RESERVE_MS', 7000),
+    answerReserveMs: num('OPENAI_ANSWER_RESERVE_MS', 5000),
 
     /**
      * 허용하는 model 값.

@@ -277,5 +277,49 @@ console.log('\n■ 라우팅이 두 핸들러 모두에 걸렸는지');
   check('두 라우트 모두 오리진 비밀 검증', guarded.length === 2, `${guarded.length}곳`);
 }
 
+// ════════════════════════════════════════════════════════════
+// 예산에서 앞단 시간을 빼는지
+//
+// 실제 사고: openai.budgetMs 를 runAgent 에 그대로 넘겨서 레이트리밋 조회와
+// 정책 LLM 분류(최대 3,590ms 실측)가 예산 밖에서 더해졌습니다. 총합이
+// 15,600ms 가 되어 GuardBench 15초 벽을 넘고, 벤치마크 41건 중 3건이
+// PROVIDER_TIMEOUT 재시도를 돌며 진행률이 38 에서 멈췄습니다.
+// ════════════════════════════════════════════════════════════
+console.log('\n■ 예산 — 앞단에서 쓴 시간을 빼고 넘기는가');
+{
+  const { readFileSync } = await import('node:fs');
+  const raw = readFileSync(new URL('../src/openai.mjs', import.meta.url), 'utf8');
+  // ★ 주석을 걷어내고 봅니다. 주석에 옛 코드를 예시로 적어두면 그게 걸립니다
+  //   (실제로 이 검사를 처음 넣었을 때 주석의 `budgetMs: config.openai.budgetMs`
+  //    를 잡아 오탐이 났습니다).
+  const src = raw
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
+
+  check('경과 시간을 계산한다',
+    /const\s+spentMs\s*=\s*Date\.now\(\)\s*-\s*t0/.test(src));
+  check('예산에서 경과 시간을 뺀다',
+    /config\.openai\.budgetMs\s*-\s*spentMs/.test(src));
+  check('runAgent 에 차감된 값을 넘긴다',
+    /budgetMs:\s*remainingMs/.test(src));
+  check('원래 값을 그대로 넘기지 않는다',
+    !/budgetMs:\s*config\.openai\.budgetMs\b/.test(src));
+  check('하한이 있다 (정책이 예산을 다 먹어도 시도)',
+    /Math\.max\(\s*\d{3,}\s*,\s*config\.openai\.budgetMs/.test(src));
+
+  // 총 예산이 GuardBench 타임아웃 안에 콜드 스타트 여유까지 두는지
+  const { config } = await import('../src/lib/config.mjs');
+  const GUARDBENCH_TIMEOUT = 15000;
+  const HEADROOM = 4000;   // 콜드 스타트 1~2초 + 응답 직렬화
+  check(`예산 ${config.openai.budgetMs}ms + 여유 ${HEADROOM}ms ≤ GuardBench ${GUARDBENCH_TIMEOUT}ms`,
+    config.openai.budgetMs + HEADROOM <= GUARDBENCH_TIMEOUT,
+    `${config.openai.budgetMs} + ${HEADROOM} = ${config.openai.budgetMs + HEADROOM}`);
+
+  // 예약이 예산의 60% 상한에 조용히 깎이지 않는지
+  check(`예약 ${config.openai.answerReserveMs}ms ≤ 예산의 60% (${config.openai.budgetMs * 0.6}ms)`,
+    config.openai.answerReserveMs <= config.openai.budgetMs * 0.6,
+    `${config.openai.answerReserveMs} vs ${config.openai.budgetMs * 0.6}`);
+}
+
 console.log(`\n${failures === 0 ? '✓ 전부 통과' : `✗ ${failures}건 실패`}`);
 process.exit(failures === 0 ? 0 : 1);

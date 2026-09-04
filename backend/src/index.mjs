@@ -484,6 +484,15 @@ async function healthPayload() {
         : 'unknown',
       externalApiTimeoutMs: Number(process.env.EXTERNAL_API_TIMEOUT_MS || 5000),
       externalApiRetries: Number(process.env.EXTERNAL_API_RETRIES || 1),
+      // OpenAI 호환 경로(GuardBench Target)는 예산이 따로입니다.
+      // budgetMs 는 **요청 전체**의 벽입니다 — 정책 분류 시간이 여기서 차감됩니다.
+      // GuardBench 기본 타임아웃 15초와 대조해 보세요.
+      openai: {
+        budgetMs: config.openai.budgetMs,
+        answerReserveMs: config.openai.answerReserveMs,
+        perMinute: config.openai.perMinute,
+        perDay: config.openai.perDay,
+      },
     },
 
     limits: { perMinute: config.limits.perMinute, perDay: config.limits.perDay },
