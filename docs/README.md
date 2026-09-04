@@ -2,6 +2,9 @@
 
 10편 · 7,700줄. **처음이면 `10` 하나만 읽으면 됩니다.**
 
+발표용 자료는 저장소 루트에 있습니다 — [BookBot-발표자료.pptx](../BookBot-발표자료.pptx) (6장),
+[aws-architecture.png](./aws-architecture.png) (인프라 구성도).
+
 | # | 파일 | 줄 | 무엇 |
 |---|---|---|---|
 | **10** | [10-cheatsheet](./10-cheatsheet.md) | 185 | **로직 1p + AWS 1p.** 여기서 시작 |

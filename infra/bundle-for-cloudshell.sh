@@ -52,9 +52,10 @@ zip -qr "$OUT" \
   -x 'infra/secrets.env' \
   -x 'infra/.state' \
   -x 'infra/.*' \
-  -x 'docs/*.png'
-# docs/architecture.png 은 발표용 이미지(400KB+)라 배포 번들에서 제외합니다.
-# 같은 그림이 docs/architecture.svg 와 docs/overview.html 안에 들어 있습니다.
+  -x 'docs/*.png' \
+  -x '*.pptx'
+# docs/aws-architecture.png(390KB)·발표 자료(.pptx)는 배포에 쓰지 않는 자료라
+# 번들에서 제외합니다. 필요하면 scripts/make-arch-diagram.py 로 다시 만듭니다.
 
 rm -f "$ROOT_DIR/BUNDLE.txt"
 [ -f "$OUT" ] || die "번들 생성 실패"

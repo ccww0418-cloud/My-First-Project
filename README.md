@@ -49,12 +49,27 @@ bash infra/verify.sh                           # 검증
 
 ---
 
+## 발표 자료
+
+| 파일 | 내용 |
+|---|---|
+| **[BookBot-발표자료.pptx](./BookBot-발표자료.pptx)** | 6장 · 16:9 · 발표자 노트 포함 |
+| **[docs/aws-architecture.png](./docs/aws-architecture.png)** | AWS 인프라 아키텍처 (1600×1120) |
+
+둘 다 스크립트로 다시 만들 수 있습니다.
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install python-pptx pillow
+.venv/bin/python scripts/make-arch-diagram.py    # → docs/aws-architecture.png
+.venv/bin/python scripts/make-deck.py            # → BookBot-발표자료.pptx
+```
+
+![아키텍처](./docs/aws-architecture.png)
+
+---
+
 ## 문서 — 읽는 순서
 
-### 처음 읽는 순서
-
-| 순서 | 문서 | 내용 |
-|---|---|---|
 전체 지도는 **[docs/README.md](./docs/README.md)** 에 있습니다.
 
 | 순서 | 문서 | 내용 |
