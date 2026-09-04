@@ -238,7 +238,7 @@ fields @timestamp
 | 징후 | 원인 | 즉시 조치 |
 |---|---|---|
 | Bedrock 비용이 하루에 2배 이상 증가 | 봇/스크래퍼 유입 | `RATE_LIMIT_PER_DAY`를 30으로 낮추고 재배포 |
-| Lambda `Throttles` 발생 | 예약 동시성 10에 도달 = 트래픽 급증 | 로그에서 IP 확인 → WAF에 IP 차단 규칙 추가 |
+| Lambda `Throttles` 발생 | 예약 동시성 상한에 도달 = 트래픽 급증 | 로그에서 IP 확인 → WAF에 IP 차단 규칙 추가 |
 | "도구 반복 상한 도달" 로그 급증 | LLM이 검색을 계속 실패 → 반복 호출 | 프롬프트 점검, `MAX_TOOL_ITERATIONS`를 2로 |
 | 평균 입력 토큰이 15,000 초과 | 히스토리 비대 | `historyTurns`를 6으로 |
 

@@ -31,12 +31,32 @@ export LAMBDA_ARCH="arm64"
 export LAMBDA_HANDLER="src/index.handler"
 export LAMBDA_MEMORY="1024"
 export LAMBDA_TIMEOUT="90"
-export LAMBDA_RESERVED_CONCURRENCY="10"
+# 예약 동시성 — 비용 방어 3층입니다.
+#
+#   숫자   그 값으로 예약 (미예약분이 부족하면 자동으로 낮춥니다)
+#   none   예약을 **삭제**합니다. 계정 미예약 풀(보통 1,000)을 함께 씁니다
+#
+# ⚠️ none 으로 두면 이 함수가 계정 한도까지 확장될 수 있습니다. 공개
+#    엔드포인트 + Bedrock 조합이라 노출이 커집니다. 벤치마크처럼 동시 요청이
+#    많은 작업에만 쓰고 끝나면 숫자로 되돌리세요.
+#    남는 방어: 앱 레이트리밋(IP별) · WAF(5분당 300) · Budgets($100 / Bedrock $50)
+export LAMBDA_RESERVED_CONCURRENCY="${LAMBDA_RESERVED_CONCURRENCY:-none}"
 
 # ── 앱 동작 설정 ────────────────────────────────────────────
 export RATE_LIMIT_PER_MINUTE="${RATE_LIMIT_PER_MINUTE:-10}"
 export RATE_LIMIT_PER_DAY="${RATE_LIMIT_PER_DAY:-150}"
 export MAX_TOOL_ITERATIONS="${MAX_TOOL_ITERATIONS:-4}"
+
+# OpenAI 호환 경로(GuardBench Target)는 카운터가 따로입니다 — RLOAI#<ip>.
+#
+# 왜 채팅(10/분)보다 높은가: 벤치마크 한 실행이 TestCase 수십 건을 **동시에**
+# 던집니다. 그리고 4xx 는 GuardBench 에서 재시도 대상이 아니라(isRetryable=false)
+# 429 를 한 번 받으면 그 케이스는 영구 실패로 남습니다.
+#
+# 41건 × 재시도 3회 = 최대 123건이 한 분에 몰릴 수 있어 150 으로 둡니다.
+# 하루 상한(600)이 실질 비용 뚜껑입니다.
+export OPENAI_RATE_LIMIT_PER_MINUTE="${OPENAI_RATE_LIMIT_PER_MINUTE:-150}"
+export OPENAI_RATE_LIMIT_PER_DAY="${OPENAI_RATE_LIMIT_PER_DAY:-600}"
 
 # ── 정책 판정 (GuardBench 연동) ──────────────────────────────
 # POLICY_LLM_CHECK=0  이면 규칙 기반만 사용 (Bedrock 추가 호출 없음, 주제 판정 불가)

@@ -34,7 +34,7 @@
                               ├ 5. 의도 분류 (Bedrock)     → BOOK/SERVICE/ATTACK
                               ├ 6. 프롬프트 지시 + 도구 루프
                               └ 7. 기록 (TTL) · 로그 마스킹
-                              예약 동시성 10 · 요청 예산 26초
+                              예약 동시성 없음 · 요청 예산 26초
 ```
 
 ## 한 장 요약
@@ -53,7 +53,7 @@
 | 10 | 의도 분류 | BOOK/SERVICE/ATTACK, 24h 캐시 | `policy.mjs` |
 | 11 | 프롬프트 보안 지시 | 5종 (아래 표) | `prompt.mjs` |
 | 12 | IAM 최소 권한 | 리소스·조건 한정 | `01-backend.sh` |
-| 13 | 예약 동시성 | **10** | `config.sh` |
+| 13 | 예약 동시성 | **없음** (벤치마크용) · 상시 운영은 10 | `config.sh` |
 | 14 | 도구 반복 상한 | 4회 | `config.mjs` |
 | 15 | 요청 예산 | 26초 (OpenAI 경로 12초) | `config.mjs` |
 | 16 | Budgets | 전체 **$100** / Bedrock **$50** | `04-guardrails.sh` |
@@ -226,10 +226,32 @@ kms:Decrypt
 
 | 층 | 방어 | 값 |
 |---|---|---|
-| 1 | 앱 레이트리밋 (DynamoDB) | 분당 10 / 하루 150 |
+| 1 | 앱 레이트리밋 (DynamoDB) | 채팅 분당 10 / 하루 150 · OpenAI 경로 분당 150 / 하루 600 |
 | 2 | WAF rate-based | 5분당 300 (채팅 100) |
-| 3 | **Lambda 예약 동시성** | **10** |
+| 3 | **Lambda 예약 동시성** | **없음** — 아래 주의 |
 | 4 | AWS Budgets | 전체 $100 / Bedrock $50 |
+
+> ### ⚠️ 3층이 지금 비어 있습니다
+>
+> 예약 동시성을 **의도적으로 삭제**했습니다. 값이 10이면 **11번째 동시 요청부터
+> Lambda 가 시작조차 못 하고** API Gateway 가 503 을 돌려줍니다. GuardBench 는
+> TestCase 를 병렬로 던지므로 41건 실행에서 실측 25건이 503 이었고, GuardBench
+> 쪽에서는 `PROVIDER_UNAVAILABLE` 로 기록되어 재시도 3회를 모두 소진했습니다.
+>
+> ```
+> 동시 35건 → 200 정확히 10건 · 503 25건
+> ```
+>
+> 삭제하면 계정 미예약 풀(보통 1,000)까지 확장될 수 있습니다. 공개 엔드포인트 +
+> Bedrock 조합이라 노출이 큽니다. 남은 방어는 IP별 앱 레이트리밋 · WAF · Budgets 뿐입니다.
+>
+> **벤치마크가 끝나면 되돌리세요.**
+>
+> ```bash
+> aws lambda put-function-concurrency --function-name bookbot-api \
+>   --reserved-concurrent-executions 10 --region us-east-1
+> # 그리고 infra/config.sh 의 LAMBDA_RESERVED_CONCURRENCY 를 10 으로
+> ```
 
 Budgets 알림: 실제 **50%** · **80%**, 예측 **100%**.
 

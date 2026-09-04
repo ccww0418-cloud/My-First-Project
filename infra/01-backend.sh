@@ -311,6 +311,8 @@ TABLE_NAME=$TABLE_NAME,\
 SSM_PREFIX=$SSM_PREFIX,\
 RATE_LIMIT_PER_MINUTE=$RATE_LIMIT_PER_MINUTE,\
 RATE_LIMIT_PER_DAY=$RATE_LIMIT_PER_DAY,\
+OPENAI_RATE_LIMIT_PER_MINUTE=${OPENAI_RATE_LIMIT_PER_MINUTE:-150},\
+OPENAI_RATE_LIMIT_PER_DAY=${OPENAI_RATE_LIMIT_PER_DAY:-600},\
 MAX_TOOL_ITERATIONS=$MAX_TOOL_ITERATIONS,\
 AGENT_BUDGET_MS=$AGENT_BUDGET_MS,\
 REQUEST_BUDGET_MS=$REQUEST_BUDGET_MS,\
@@ -377,6 +379,24 @@ fi
 # 교육/신규 계정은 계정 동시성 한도가 10~50으로 낮은 경우가 많아,
 # 10을 예약하려 하면 InvalidParameterValueException이 납니다.
 # 그런 경우엔 계정 한도 자체가 상한 역할을 하므로 방어는 유지됩니다.
+#
+# LAMBDA_RESERVED_CONCURRENCY=none 이면 예약을 삭제합니다.
+#
+#   왜 이런 선택지가 필요한가 — 예약 동시성은 **동시 실행 상한**이라, 값이 10이면
+#   11번째 동시 요청부터 Lambda 가 시작조차 못 하고 API Gateway 가 503 을 줍니다.
+#   GuardBench 는 TestCase 를 병렬로 던지므로 41건 실행에서 실측 25건이 503 이었고,
+#   GuardBench 쪽에서는 PROVIDER_UNAVAILABLE 로 기록되어 재시도 3회를 모두 소진했습니다.
+if [ "$LAMBDA_RESERVED_CONCURRENCY" = "none" ]; then
+  if aws lambda delete-function-concurrency \
+      --region "$REGION" --function-name "$FUNCTION_NAME" >/dev/null 2>&1; then
+    ok "예약 동시성 삭제 — 계정 미예약 풀을 함께 사용합니다"
+  else
+    info "예약 동시성이 이미 없습니다"
+  fi
+  warn "동시 실행 상한이 계정 한도까지 열렸습니다 (공개 엔드포인트 + Bedrock)"
+  info "남은 방어: 앱 레이트리밋(IP별) · WAF 5분당 300 · Budgets \$100 / Bedrock \$50"
+  info "벤치마크가 끝나면 LAMBDA_RESERVED_CONCURRENCY=10 으로 되돌리세요"
+else
 ACCOUNT_LIMIT="$(aws lambda get-account-settings --region "$REGION" \
   --query 'AccountLimit.ConcurrentExecutions' --output text 2>/dev/null || echo "")"
 
@@ -399,6 +419,7 @@ if [ -n "$ACCOUNT_LIMIT" ] && [ "$ACCOUNT_LIMIT" != "None" ]; then
   fi
 else
   warn "계정 동시성 한도를 조회할 수 없어 예약 동시성을 건너뜁니다"
+fi
 fi
 
 # ── 로그 보존 기간 — 안 하면 무기한 쌓입니다 ────────────────
