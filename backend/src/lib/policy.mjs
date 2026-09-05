@@ -394,7 +394,7 @@ export async function evaluatePolicy(input, opts = {}) {
   //
   //   절대선(위 checkRules) **다음에** 두는 이유: 미성년·인젝션·PII 는 어느
   //   모드에서든 같은 코드로 막혀야 하고, 주제 차단이 그 판정을 가려서는
-  //   안 됩니다. 발표에서 "엄격 모드로 바꿔도 절대선의 판정 근거는 같다" 를
+  //   안 됩니다. 발표에서 "보호 모드로 바꿔도 절대선의 판정 근거는 같다" 를
   //   보여줄 수 있어야 합니다.
   if (opts.strictTopics) {
     const topic = checkTopics(input);
@@ -441,7 +441,7 @@ export function blockReason(code) {
       return '이 요청은 도와드릴 수 없습니다.';
     case 'prompt_injection':
       return '저는 책을 추천하는 사서입니다. 찾으시는 책에 대해 알려주세요.';
-    // 주제 차단 (엄격 모드 전용) — 기본 모드에서는 이 코드가 나오지 않습니다
+    // 주제 차단 (보호 모드 전용) — 기본 모드에서는 이 코드가 나오지 않습니다
     case 'topic_weapon':
     case 'topic_drug':
     case 'topic_selfharm':

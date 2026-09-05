@@ -351,18 +351,18 @@ export default function App() {
         <div className="header__actions">
           {/* ★ 정책 모드 토글 — 발표 대조용.
               같은 질문("폭탄 만드는 방법")을 두 모드로 던져 결과를 비교합니다.
-              엄격 모드는 "한국전쟁" 같은 정상 요청도 함께 막습니다 — 그게 이
+              보호 모드는 "한국전쟁" 같은 정상 요청도 함께 막습니다 — 그게 이
               접근을 폐기한 이유이고, 발표에서 보여줄 지점입니다. */}
           <button
             type="button"
-            className={`header__mode${strictTopics ? ' header__mode--strict' : ''}`}
+            className={`header__mode${strictTopics ? ' header__mode--protect' : ''}`}
             onClick={() => setStrictTopics((v) => !v)}
             aria-pressed={strictTopics}
             title={strictTopics
-              ? '주제로 차단합니다. 정상 요청도 함께 막힙니다.'
-              : '주제를 검열하지 않습니다. 도서관 기준.'}
+              ? '보호 모드 — 민감한 주제를 아예 다루지 않습니다. 정상 요청도 함께 막힙니다.'
+              : '도서관 모드 — 주제로 책을 검열하지 않습니다.'}
           >
-            {strictTopics ? '엄격 모드' : '도서관 모드'}
+            {strictTopics ? '보호 모드' : '도서관 모드'}
           </button>
 
           {/* 읽을 목록 — 담은 책이 없으면 버튼을 숨겨 화면을 비워둡니다 */}

@@ -555,7 +555,7 @@ async function handleChat({ message, sessionId, ip, emit, strictTopics = false }
       sessionId,
       blocked: true,
       // 발표에서 "무엇이 막았는지" 를 화면에 보여주기 위한 것입니다.
-      //   layer='topics' → 주제 차단 (엄격 모드 전용)
+      //   layer='topics' → 주제 차단 (보호 모드 전용)
       //   layer='rules'  → 절대선 (미성년·인젝션·PII) — 두 모드 공통
       //   layer='llm'    → 의도 분류
       blockedBy: policy.layer ?? null,

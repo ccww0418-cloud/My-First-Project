@@ -1269,12 +1269,12 @@ body::before {
 }
 
 /* ★ 정책 모드 토글 — 발표 대조용.
-   엄격 모드는 평상시가 아닌 상태라 눈에 띄어야 합니다. 다만 색만으로
+   보호 모드는 평상시가 아닌 상태라 눈에 띄어야 합니다. 다만 색만으로
    구분하지 않고 밑줄을 함께 씁니다(색각 이상 대응). */
 .header__mode {
   cursor: pointer;
 }
-.header__mode--strict {
+.header__mode--protect {
   color: var(--accent, #a03a2c);
   text-decoration: underline;
   text-underline-offset: 3px;
