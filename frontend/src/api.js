@@ -105,11 +105,17 @@ export async function fetchHealth() {
  * @param {(event: object) => void} params.onEvent  백엔드 SSE 이벤트 콜백
  * @param {AbortSignal} [params.signal]             중단용
  */
-export async function streamChat({ message, sessionId, onEvent, signal }) {
+export async function streamChat({ message, sessionId, onEvent, signal, strictTopics = false }) {
   const res = await fetch(url('/chat'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({ message, sessionId: sessionId || undefined }),
+    // strictTopics 는 발표 대조용 스위치입니다. 기본 false 라 보내지 않는 것과
+    // 같게 동작합니다(서버가 === true 만 참으로 봅니다).
+    body: JSON.stringify({
+      message,
+      sessionId: sessionId || undefined,
+      strictTopics: strictTopics || undefined,
+    }),
     signal,
   });
 

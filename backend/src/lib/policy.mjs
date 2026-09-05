@@ -101,6 +101,53 @@ const INJECTION = [
 ];
 
 /**
+ * ★ 주제 차단 — **기본으로 쓰지 않습니다.** 발표 대조용입니다.
+ *
+ * 이 서비스의 제품 정책은 "도서관은 주제로 책을 검열하지 않는다" 입니다.
+ * 그래서 예전의 `HARMFUL` 위험 주제 목록과 `POLICY_BANNED_WORDS` 를 폐기했고,
+ * 남긴 절대선은 셋뿐입니다 — 미성년 보호 · 프롬프트 인젝션 · 개인정보.
+ *
+ * 그 판단을 **발표에서 실물로 보여주려고** 옛 방식을 되살려 둔 것입니다.
+ * `evaluatePolicy(input, { strictTopics: true })` 일 때만 동작합니다.
+ *
+ * ⚠️ 이 목록은 의도적으로 옛 방식 그대로 거칩니다. 정상 요청이 함께 막히는
+ *   것이 이 접근의 성질이고, 그게 폐기한 이유이기 때문입니다.
+ *     "폭탄 만드는 방법"      → 차단 (의도한 것)
+ *     "한국전쟁 책 추천해줘"    → 차단 (부수 피해 — 역사서 수천 권이 막힙니다)
+ *     "자살을 다룬 문학"       → 차단 (부수 피해)
+ *   정교하게 다듬으면 데모의 요점이 사라지므로 다듬지 않았습니다.
+ */
+const DEMO_TOPIC_BLOCKS = [
+  { code: 'topic_weapon',    re: /폭탄|폭발물|사제총|총기\s*제작|무기\s*제조|화약/ },
+  { code: 'topic_weapon',    re: /\b(bomb|explosive|firearm|gunpowder)\b/i },
+  { code: 'topic_drug',      re: /마약|필로폰|대마\s*재배|코카인|헤로인|마약\s*제조/ },
+  { code: 'topic_drug',      re: /\b(narcotic|methamphetamine|cocaine|heroin)\b/i },
+  { code: 'topic_selfharm',  re: /자살|자해|극단적\s*선택/ },
+  { code: 'topic_selfharm',  re: /\b(suicide|self[-\s]?harm)\b/i },
+  { code: 'topic_hacking',   re: /해킹|크래킹|랜섬웨어|악성코드|디도스|DDoS/i },
+  { code: 'topic_hacking',   re: /\b(hacking|malware|ransomware|exploit)\b/i },
+  { code: 'topic_violence',  re: /전쟁|테러|학살|고문/ },
+  { code: 'topic_violence',  re: /\b(terror(ism)?|massacre|torture)\b/i },
+  { code: 'topic_poison',    re: /독극물|독약|청산가리/ },
+];
+
+/**
+ * 주제 검사 — `strictTopics` 모드에서만 부릅니다.
+ *
+ * @param {string} input
+ * @returns {{action:string, code:string, layer:'topics'} | null} 걸리면 판정, 아니면 null
+ */
+export function checkTopics(input) {
+  const text = String(input ?? '');
+  for (const { code, re } of DEMO_TOPIC_BLOCKS) {
+    if (re.test(text)) {
+      return { action: BLOCK, code, layer: 'topics', intent: INTENT_ATTACK };
+    }
+  }
+  return null;
+}
+
+/**
  * 개인정보 — 저장하면 안 되는 것만.
  *
  * 대화가 DynamoDB에 90일 남기 때문입니다. 검열이 아니라 데이터 보호입니다.
@@ -343,6 +390,17 @@ export async function evaluatePolicy(input, opts = {}) {
     return { intent: rules.intent ?? INTENT_ATTACK, ...rules, ms: Date.now() - t0 };
   }
 
+  // ★ 주제 차단 — 발표 대조용. 기본값에서는 건너뜁니다.
+  //
+  //   절대선(위 checkRules) **다음에** 두는 이유: 미성년·인젝션·PII 는 어느
+  //   모드에서든 같은 코드로 막혀야 하고, 주제 차단이 그 판정을 가려서는
+  //   안 됩니다. 발표에서 "엄격 모드로 바꿔도 절대선의 판정 근거는 같다" 를
+  //   보여줄 수 있어야 합니다.
+  if (opts.strictTopics) {
+    const topic = checkTopics(input);
+    if (topic) return { ...topic, ms: Date.now() - t0 };
+  }
+
   if (!LLM_CHECK || opts.skipLlm) {
     // 규칙만 쓰는 모드에서는 전부 책 요청으로 봅니다.
     // 프롬프트가 기능 요구를 스스로 전환하므로 동작에 문제가 없습니다.
@@ -383,6 +441,14 @@ export function blockReason(code) {
       return '이 요청은 도와드릴 수 없습니다.';
     case 'prompt_injection':
       return '저는 책을 추천하는 사서입니다. 찾으시는 책에 대해 알려주세요.';
+    // 주제 차단 (엄격 모드 전용) — 기본 모드에서는 이 코드가 나오지 않습니다
+    case 'topic_weapon':
+    case 'topic_drug':
+    case 'topic_selfharm':
+    case 'topic_hacking':
+    case 'topic_violence':
+    case 'topic_poison':
+      return '이 주제는 다루지 않습니다. 다른 책을 찾아드릴게요.';
     default:
       return '요청을 처리할 수 없습니다. 어떤 책을 찾으시는지 알려주세요.';
   }

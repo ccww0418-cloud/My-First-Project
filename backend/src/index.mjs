@@ -176,7 +176,11 @@ function validateChat(body) {
     return { error: `메시지가 너무 깁니다. ${config.limits.maxMessageChars}자 이내로 입력해 주세요.`, status: 413 };
   }
   const sessionId = isValidSessionId(body.sessionId) ? body.sessionId : newSessionId();
-  return { message, sessionId };
+  // ★ 발표 대조용 스위치 — 주제 차단 모드.
+  //   기본은 false 라 기존 동작이 그대로입니다. true 면 폐기했던 주제 목록이
+  //   되살아나 "폭탄" 같은 요청을 아예 막습니다(그리고 "한국전쟁" 도 함께 막힙니다).
+  const strictTopics = body.strictTopics === true;
+  return { message, sessionId, strictTopics };
 }
 
 /**
@@ -303,7 +307,7 @@ function analyzeModelId(modelId, bedrockRegion) {
  */
 async function handleGuard(body, ip) {
   const input = typeof body?.input === 'string' ? body.input : '';
-  const verdict = await evaluatePolicy(input);
+  const verdict = await evaluatePolicy(input, { strictTopics: body?.strictTopics === true });
 
   log.info('policy 판정', {
     action: verdict.action,
@@ -513,7 +517,7 @@ async function healthPayload() {
  * @param {string} params.ip
  * @param {(event:object)=>void} params.emit
  */
-async function handleChat({ message, sessionId, ip, emit }) {
+async function handleChat({ message, sessionId, ip, emit, strictTopics = false }) {
   const t0 = Date.now();
 
   const rl = await checkRateLimit(ip);
@@ -531,7 +535,7 @@ async function handleChat({ message, sessionId, ip, emit }) {
   //
   // LLM 분류는 Bedrock 호출을 1회 추가하므로(약 300~600ms) 비용과 지연이
   // 늘어납니다. 캐시가 있어 반복 입력은 빠릅니다.
-  const policy = await evaluatePolicy(message);
+  const policy = await evaluatePolicy(message, { strictTopics });
 
   // ★ 차단은 세 가지 경우뿐입니다.
   //     · 기술적 문제 (빈 입력·과길이·제어문자·인코딩 덩어리)
@@ -546,7 +550,19 @@ async function handleChat({ message, sessionId, ip, emit }) {
     log.info('정책 차단', { code: policy.code, layer: policy.layer, intent: policy.intent, ms: policy.ms, ip });
     const blockMessage = blockReason(policy.code);
     emit({ type: 'error', code: `policy_${policy.code}`, message: blockMessage });
-    emit({ type: 'done', sessionId, blocked: true, usage: { inputTokens: 0, outputTokens: 0 } });
+    emit({
+      type: 'done',
+      sessionId,
+      blocked: true,
+      // 발표에서 "무엇이 막았는지" 를 화면에 보여주기 위한 것입니다.
+      //   layer='topics' → 주제 차단 (엄격 모드 전용)
+      //   layer='rules'  → 절대선 (미성년·인젝션·PII) — 두 모드 공통
+      //   layer='llm'    → 의도 분류
+      blockedBy: policy.layer ?? null,
+      blockCode: policy.code ?? null,
+      mode: strictTopics ? 'strict' : 'library',
+      usage: { inputTokens: 0, outputTokens: 0 },
+    });
 
     // 차단된 요청도 기록합니다. 무엇이 왜 막혔는지 봐야 정책을 조정할 수 있습니다.
     await appendChatLog({
@@ -601,6 +617,7 @@ async function handleChat({ message, sessionId, ip, emit }) {
   emit({
     type: 'done',
     sessionId,
+    mode: strictTopics ? 'strict' : 'library',
     usage: result.usage,
     toolCalls: result.toolCalls,
     bookCount: result.books.length,
@@ -751,6 +768,7 @@ const streamingImpl = async (event, responseStream) => {
         sessionId: v.sessionId,
         ip: clientIpFrom(event),
         emit,
+        strictTopics: v.strictTopics,
       });
     } catch (err) {
       log.error('chat 처리 중 오류', { err });
@@ -861,6 +879,7 @@ export const bufferedHandler = async (event) => {
       sessionId: v.sessionId,
       ip: clientIpFrom(event),
       emit: (e) => events.push(e),
+      strictTopics: v.strictTopics,
     });
 
     const rateLimited = events.find((e) => e.type === 'error' && e.code === 'rate_limited');

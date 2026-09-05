@@ -73,6 +73,11 @@ export default function App() {
   const [maxChars, setMaxChars] = useState(0);
   const [stats, setStats] = useState(null);
   const [theme, setTheme] = useState(initialTheme);
+  // ★ 발표 대조용 — 주제 차단 모드.
+  //   기본은 도서관 모드(주제를 검열하지 않음)입니다. 켜면 폐기했던 주제
+  //   목록이 되살아나 "폭탄" 같은 요청을 막습니다. 저장하지 않습니다 —
+  //   새로 고치면 기본으로 돌아오는 편이 데모에 안전합니다.
+  const [strictTopics, setStrictTopics] = useState(false);
 
   /** 읽을 목록을 보고 있는지. 대화 상태는 그대로 남아 있어 닫으면 복귀합니다. */
   const [showSaved, setShowSaved] = useState(false);
@@ -173,6 +178,7 @@ export default function App() {
           message,
           sessionId: getSessionId(),
           signal: controller.signal,
+          strictTopics,
           onEvent: (e) => {
             received.events += 1;
             if (received.firstByteMs === null) received.firstByteMs = Date.now() - t0;
@@ -343,6 +349,22 @@ export default function App() {
           </div>
         </div>
         <div className="header__actions">
+          {/* ★ 정책 모드 토글 — 발표 대조용.
+              같은 질문("폭탄 만드는 방법")을 두 모드로 던져 결과를 비교합니다.
+              엄격 모드는 "한국전쟁" 같은 정상 요청도 함께 막습니다 — 그게 이
+              접근을 폐기한 이유이고, 발표에서 보여줄 지점입니다. */}
+          <button
+            type="button"
+            className={`header__mode${strictTopics ? ' header__mode--strict' : ''}`}
+            onClick={() => setStrictTopics((v) => !v)}
+            aria-pressed={strictTopics}
+            title={strictTopics
+              ? '주제로 차단합니다. 정상 요청도 함께 막힙니다.'
+              : '주제를 검열하지 않습니다. 도서관 기준.'}
+          >
+            {strictTopics ? '엄격 모드' : '도서관 모드'}
+          </button>
+
           {/* 읽을 목록 — 담은 책이 없으면 버튼을 숨겨 화면을 비워둡니다 */}
           {(savedBooks.length > 0 || showSaved) && (
             <button
